@@ -12,6 +12,7 @@ import { handleDesafio, registerDesafioActions } from './desafioHandler';
 import {
   getOrCreateUser,
   updateLevel,
+  updateTimezone,
   XP_THRESHOLDS,
   getNotificationPrefs,
   setNotificationPrefs,
@@ -19,6 +20,8 @@ import {
 } from '../services/userService';
 import { getUserCardStats } from '../services/srsRepository';
 import { getErrorSummary } from '../services/errorTracker';
+import { getLearnerFacts } from '../services/learnerFacts';
+import { getMemoryForPrompt } from '../services/userMemory';
 
 const cmdLog = log.withScope('commands');
 
@@ -37,6 +40,16 @@ export function registerCommands(app: App): void {
       });
 
       try {
+        // Gate commands behind onboarding (except help, onboard, level)
+        const UNGATED_COMMANDS = ['help', '', 'onboard', 'level', 'timezone'];
+        if (!UNGATED_COMMANDS.includes(subcommand)) {
+          const user = getOrCreateUser(command.user_id);
+          if (!user.onboarded) {
+            await handleOnboardCommand(command.user_id, client, respond);
+            return;
+          }
+        }
+
         switch (subcommand) {
           case 'help':
           case '': {
@@ -146,6 +159,74 @@ export function registerCommands(app: App): void {
               const blocks = buildNotificationBlocks(prefs);
               await respondEphemeral(respond, 'Notification Settings', blocks);
             }
+            break;
+          }
+
+          case 'timezone': {
+            const tzArgs = command.text.trim().split(/\s+/).slice(1);
+            const user = getOrCreateUser(command.user_id);
+
+            if (tzArgs.length > 0) {
+              const tz = tzArgs[0];
+              // Validate timezone by trying to use it
+              try {
+                new Date().toLocaleTimeString('en-GB', { timeZone: tz });
+              } catch {
+                await respondEphemeral(respond, `Invalid timezone: "${tz}". Use IANA format, e.g. \`America/New_York\`, \`Europe/London\`, \`America/Argentina/Buenos_Aires\``);
+                break;
+              }
+              updateTimezone(user.id, tz);
+              await respondEphemeral(respond, `Timezone updated to *${tz}*. Notifications and quiet hours will use this timezone.`);
+            } else {
+              await respondEphemeral(respond, `Your timezone: *${user.timezone}*\nUse \`/gringo timezone <IANA timezone>\` to change it.\nExamples: \`America/New_York\`, \`America/Chicago\`, \`America/Los_Angeles\`, \`America/Argentina/Buenos_Aires\``);
+            }
+            break;
+          }
+
+          case 'profile': {
+            const user = getOrCreateUser(command.user_id);
+            const facts = getLearnerFacts(user.id, 15);
+            const memoryText = getMemoryForPrompt(user.id);
+            const cardStats = getUserCardStats(user.id);
+            const errorSummary = getErrorSummary(user.id);
+
+            const sections: string[] = [
+              `*Name:* ${user.displayName ?? 'Unknown'}`,
+              `*Level:* ${user.level}/5 | *XP:* ${user.xp} | *Streak:* ${user.streakDays} day${user.streakDays !== 1 ? 's' : ''}`,
+              `*Timezone:* ${user.timezone}`,
+              `*SRS Cards:* ${cardStats.total} (${cardStats.due} due)`,
+            ];
+
+            if (errorSummary.length > 0) {
+              sections.push(`\n*Error Patterns:*`);
+              for (const e of errorSummary) {
+                sections.push(`• ${e.category}: ${e.count}`);
+              }
+            }
+
+            if (facts.length > 0) {
+              sections.push(`\n*What I've noticed about you:*`);
+              for (const f of facts.slice(0, 10)) {
+                const icon = f.category === 'strength' ? '💪' : f.category === 'interest' ? '🎯' : f.category === 'error_pattern' ? '📝' : f.category === 'pronunciation' ? '🗣️' : '•';
+                sections.push(`${icon} ${f.fact}`);
+              }
+            }
+
+            if (memoryText) {
+              sections.push(`\n*Learner Profile:*`);
+              sections.push(memoryText);
+            }
+
+            if (!facts.length && !memoryText) {
+              sections.push(`\n_I haven't built a profile for you yet — keep chatting and I'll learn your strengths and areas to improve!_`);
+            }
+
+            const blocks = [
+              { type: 'header', text: { type: 'plain_text', text: 'Your Profile' } },
+              { type: 'section', text: { type: 'mrkdwn', text: sections.join('\n') } },
+            ];
+
+            await respondEphemeral(respond, 'Your Profile', blocks as any);
             break;
           }
 

@@ -88,9 +88,13 @@ const CHARLA_TOOLS: ToolDefinition[] = [PRONOUNCE_TOOL, LOG_OBSERVATION_TOOL];
 
 // ── Message building ────────────────────────────────────────
 
-export function buildCharlaSystemPrompt(userLevel: number, memoryContext?: string): string {
+export function buildCharlaSystemPrompt(userLevel: number, memoryContext?: string, displayName?: string): string {
   const template = getPromptOrThrow('charla_system');
   let prompt = interpolate(template, { level: String(userLevel) });
+
+  if (displayName) {
+    prompt += `\n\nThe student's name is ${displayName}. Use their name occasionally to make the conversation feel personal.`;
+  }
 
   if (memoryContext) {
     prompt += `\n\n--- Learner Profile ---\n${memoryContext}\n\nUse this profile to personalize your teaching. Focus on their weaknesses, build on their strengths, and reference their interests when possible.`;
@@ -117,8 +121,9 @@ export async function generateCharlaResponse(
   userLevel: number,
   memoryContext?: string,
   userId?: number,
+  displayName?: string,
 ): Promise<CharlaResponse> {
-  const system = buildCharlaSystemPrompt(userLevel, memoryContext);
+  const system = buildCharlaSystemPrompt(userLevel, memoryContext, displayName);
 
   const messages: LlmMessage[] = [
     ...conversationHistory,
@@ -237,6 +242,7 @@ export async function processCharlaMessage(
   userLevel: number,
   memoryContext?: string,
   userId?: number,
+  displayName?: string,
 ): Promise<CharlaResponse> {
   if (detectNoEntiendo(userMessage)) {
     const lastBotMessage = [...conversationHistory]
@@ -249,5 +255,5 @@ export async function processCharlaMessage(
     }
   }
 
-  return generateCharlaResponse(userMessage, conversationHistory, userLevel, memoryContext, userId);
+  return generateCharlaResponse(userMessage, conversationHistory, userLevel, memoryContext, userId, displayName);
 }

@@ -26,6 +26,7 @@ import type { LlmMessage } from '../services/llm';
 import { postMessage } from '../utils/slackHelpers';
 import { getXpForTextMessage, getXpForVoiceMemo, getSetting } from '../services/settings';
 import { isAdminDm, handleAdminDm } from './adminHandler';
+import { sendWelcomeDm } from './onboardingHandler';
 import { generatePronunciationAudio } from '../services/pronunciation';
 import { uploadAudioToSlack } from '../utils/slackAudio';
 
@@ -175,6 +176,25 @@ export function registerMessageHandlers(app: App): void {
 
         const user = getOrCreateUser(slackUserId);
 
+        // ── Onboarding gate ───────────────────────────────────
+        // Users who haven't completed onboarding get the welcome flow instead
+        if (!user.onboarded) {
+          msgLog.info(`User ${slackUserId} not onboarded — sending welcome DM`);
+          try {
+            await sendWelcomeDm(client, slackUserId);
+            // If this was in a channel (not DM), nudge them
+            if (channelType !== 'im') {
+              await say({
+                text: "Hey! Looks like you haven't set up your profile yet. Check your DMs — I just sent you a welcome message to get started!",
+                thread_ts: threadTs,
+              });
+            }
+          } catch (err) {
+            msgLog.error(`Failed to send onboarding DM to ${slackUserId}: ${err}`);
+          }
+          return;
+        }
+
         // Check if there's an active conversation in this thread
         let conversation = getConversationByThread(channelId, threadTs);
         if (!conversation) {
@@ -203,11 +223,12 @@ export function registerMessageHandlers(app: App): void {
             text || undefined,
             memoryContext,
             user.id,
+            user.displayName ?? undefined,
           );
 
           addTurn(conversation.id);
           updateStreak(user.id);
-          addXp(user.id, getXpForVoiceMemo());
+          const voiceXpResult = addXp(user.id, getXpForVoiceMemo());
 
           // Save messages to DB for thread continuity
           saveMessage(conversation.id, 'user', result.transcript.transcript);
@@ -226,17 +247,23 @@ export function registerMessageHandlers(app: App): void {
           // Upload pronunciation demo clips if the LLM generated any
           await uploadPronunciationClips(result.response, client, channelId, threadTs);
 
+          // Celebrate level-up
+          if (voiceXpResult.leveledUp) {
+            const updatedUser = getOrCreateUser(slackUserId);
+            await postMessage(client, channelId, `🎉 *Level up!* You're now level ${updatedUser.level}. Keep it up!`, undefined, threadTs);
+          }
+
           msgLog.info(`Voice memo processed for ${slackUserId}`);
           return;
         }
 
         // ── Text message path ────────────────────────────────
 
-        const response = await processCharlaMessage(text, history, user.level, memoryContext, user.id);
+        const response = await processCharlaMessage(text, history, user.level, memoryContext, user.id, user.displayName ?? undefined);
 
         addTurn(conversation.id);
         updateStreak(user.id);
-        addXp(user.id, getXpForTextMessage());
+        const textXpResult = addXp(user.id, getXpForTextMessage());
 
         // Save messages to DB for thread continuity
         saveMessage(conversation.id, 'user', text);
@@ -249,6 +276,15 @@ export function registerMessageHandlers(app: App): void {
 
         // Upload pronunciation demo clips if the LLM generated any
         await uploadPronunciationClips(response, client, channelId, threadTs);
+
+        // Celebrate level-up
+        if (textXpResult.leveledUp) {
+          const updatedUser = getOrCreateUser(slackUserId);
+          await say({
+            text: `🎉 *Level up!* You're now level ${updatedUser.level}. Keep it up!`,
+            thread_ts: threadTs,
+          });
+        }
 
         // Regenerate memory profile periodically
         const memoryRegenInterval = getSetting('memory.regenerate_after_interactions', 20);

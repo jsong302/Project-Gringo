@@ -198,6 +198,18 @@ export function markOnboarded(userId: number): void {
   userLog.info(`User ${userId} marked as onboarded`);
 }
 
+export function updateDisplayName(userId: number, displayName: string): void {
+  const db = getDb();
+  db.run(`UPDATE users SET display_name = '${esc(displayName)}', updated_at = datetime('now') WHERE id = ${userId}`);
+  userLog.debug(`User ${userId} display name → ${displayName}`);
+}
+
+export function updateTimezone(userId: number, timezone: string): void {
+  const db = getDb();
+  db.run(`UPDATE users SET timezone = '${esc(timezone)}', updated_at = datetime('now') WHERE id = ${userId}`);
+  userLog.info(`User ${userId} timezone → ${timezone}`);
+}
+
 // ── Helpers ─────────────────────────────────────────────────
 
 function dateToLocalString(date: Date, timezone: string): string {

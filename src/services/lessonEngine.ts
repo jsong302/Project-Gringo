@@ -408,6 +408,47 @@ export function createCardsFromLesson(
   return totalCreated;
 }
 
+// ── Lunfardo → SRS cards ──────────────────────────────────
+
+/**
+ * Upsert a lunfardo word into the vocabulary table and create SRS cards for all users.
+ */
+export function createCardsFromLunfardo(
+  post: LunfardoPost,
+  userIds: number[],
+): number {
+  const db = getDb();
+
+  // Upsert into vocabulary (insert if not exists)
+  const existing = db.exec(
+    `SELECT id FROM vocabulary WHERE LOWER(spanish) = LOWER('${escapeSql(post.word)}') LIMIT 1`,
+  );
+
+  let vocabId: number;
+  if (existing.length && existing[0].values.length) {
+    vocabId = existing[0].values[0][0] as number;
+  } else {
+    db.run(
+      `INSERT INTO vocabulary (spanish, english, category, difficulty, example_sentence, is_lunfardo, etymology)
+       VALUES ('${escapeSql(post.word)}', '${escapeSql(post.meaning_en)}', '${escapeSql(post.category)}', 3, ${post.examples[0] ? `'${escapeSql(post.examples[0])}'` : 'NULL'}, 1, ${post.etymology ? `'${escapeSql(post.etymology)}'` : 'NULL'})`,
+    );
+    const result = db.exec('SELECT last_insert_rowid()');
+    vocabId = (result[0]?.values[0]?.[0] as number) ?? 0;
+    lessonLog.info(`Inserted lunfardo word "${post.word}" into vocabulary (id=${vocabId})`);
+  }
+
+  if (!vocabId) return 0;
+
+  let created = 0;
+  for (const userId of userIds) {
+    createCard(userId, 'vocab', vocabId);
+    created++;
+  }
+
+  lessonLog.info(`Created ${created} SRS cards from lunfardo "${post.word}" for ${userIds.length} users`);
+  return created;
+}
+
 function escapeSql(str: string): string {
   return str.replace(/'/g, "''");
 }

@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
     streak_days INTEGER NOT NULL DEFAULT 0,
     last_practice_at TEXT,
     preferred_difficulty TEXT NOT NULL DEFAULT 'normal' CHECK (preferred_difficulty IN ('easy', 'normal', 'hard')),
-    timezone TEXT NOT NULL DEFAULT 'America/Argentina/Buenos_Aires',
+    timezone TEXT NOT NULL DEFAULT 'America/New_York',
     notification_prefs TEXT NOT NULL DEFAULT '{}',
     onboarded INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),

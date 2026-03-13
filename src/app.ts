@@ -11,7 +11,7 @@ import { createDefaultJobs, scheduleJobs, stopAllJobs } from './scheduler/cron';
 import { initLlm } from './services/llm';
 import { initTts } from './services/tts';
 import { initStt } from './services/stt';
-import { generateDailyLesson, generateLunfardoPost, logLesson, createCardsFromLesson } from './services/lessonEngine';
+import { generateDailyLesson, generateLunfardoPost, logLesson, createCardsFromLesson, createCardsFromLunfardo } from './services/lessonEngine';
 import { getAllUsers } from './services/userService';
 import { recoverSessions } from './services/reviewSession';
 import { sendSrsReminders, sendLessonNotifications, sendOnboardingFollowUp } from './services/notifications';
@@ -110,6 +110,13 @@ const bootLog = log.withScope('boot');
         }
         await app.client.chat.postMessage({ channel: channelId, text: 'Lunfardo del día: ' + post.word, blocks });
         logLesson({ lessonType: 'lunfardo', topic: post.word, contentJson: JSON.stringify(post), slackChannelId: channelId });
+
+        // Auto-create SRS cards from lunfardo word for all users
+        const lunfardoUsers = getAllUsers();
+        if (lunfardoUsers.length > 0) {
+          createCardsFromLunfardo(post, lunfardoUsers.map((u) => u.id));
+        }
+
         bootLog.info('Lunfardo del día posted');
       } catch (err) {
         bootLog.error(`Lunfardo job failed: ${err instanceof Error ? err.message : String(err)}`);

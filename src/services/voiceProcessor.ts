@@ -39,6 +39,7 @@ export async function processVoiceMemo(
   accompanyingText?: string,
   memoryContext?: string,
   userId?: number,
+  displayName?: string,
 ): Promise<VoiceResult> {
   // Step 1: Transcribe
   voiceLog.info('Processing voice memo...');
@@ -77,6 +78,7 @@ export async function processVoiceMemo(
       userLevel,
       memoryContext,
       userId,
+      displayName,
     );
   }
 

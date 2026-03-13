@@ -12,7 +12,11 @@
 
 // ── Step 1: Welcome ────────────────────────────────────────
 
-export function buildWelcomeBlocks(): Record<string, unknown>[] {
+export function buildWelcomeBlocks(displayName?: string): Record<string, unknown>[] {
+  const greeting = displayName
+    ? `Hey ${displayName}! I'm *Gringo*, your Argentine Spanish tutor.`
+    : "I'm *Gringo*, your Argentine Spanish tutor.";
+
   return [
     {
       type: 'header',
@@ -23,7 +27,7 @@ export function buildWelcomeBlocks(): Record<string, unknown>[] {
       text: {
         type: 'mrkdwn',
         text: [
-          "I'm *Gringo*, your Argentine Spanish tutor. I'll teach you to speak like a real porteño — with voseo, lunfardo, and authentic flavor.",
+          `${greeting} I'll teach you to speak like a real porteño — with voseo, lunfardo, and authentic flavor.`,
           '',
           "There's a small group (6-15 people) learning together. We'll chat, practice with voice memos, and review vocabulary every day.",
           '',

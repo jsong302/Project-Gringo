@@ -15,7 +15,7 @@
  */
 import type { App } from '@slack/bolt';
 import { log } from '../utils/logger';
-import { getOrCreateUser, updateLevel, markOnboarded } from '../services/userService';
+import { getOrCreateUser, updateLevel, markOnboarded, updateDisplayName } from '../services/userService';
 import { postMessage } from '../utils/slackHelpers';
 import {
   buildWelcomeBlocks,
@@ -28,14 +28,33 @@ import {
 
 const onboardLog = log.withScope('onboarding');
 
+// ── Slack profile lookup ────────────────────────────────────
+
+/**
+ * Fetch a user's display name from the Slack API.
+ * Returns the real name or display name, or null if lookup fails.
+ */
+export async function fetchSlackDisplayName(client: any, slackUserId: string): Promise<string | null> {
+  try {
+    const info = await client.users.info({ user: slackUserId });
+    const profile = info.user?.profile;
+    return profile?.display_name || profile?.real_name || info.user?.real_name || null;
+  } catch (err) {
+    onboardLog.debug(`Could not fetch Slack profile for ${slackUserId}: ${err}`);
+    return null;
+  }
+}
+
 // ── Send the full welcome flow via DM ──────────────────────
 
 /**
  * Opens a DM with the user and sends the onboarding messages.
  * Steps 1-2 are sent immediately; steps 3-4 are sent after
  * the user picks a level (via button action).
+ *
+ * Also fetches the user's Slack display name and stores it.
  */
-async function sendWelcomeDm(client: any, slackUserId: string): Promise<void> {
+export async function sendWelcomeDm(client: any, slackUserId: string): Promise<void> {
   // Open a DM channel
   const dm = await client.conversations.open({ users: slackUserId });
   const channelId = dm.channel?.id;
@@ -44,15 +63,22 @@ async function sendWelcomeDm(client: any, slackUserId: string): Promise<void> {
     return;
   }
 
-  // Step 1: Welcome
-  const welcomeBlocks = buildWelcomeBlocks();
+  // Fetch and store the user's display name from Slack
+  const displayName = await fetchSlackDisplayName(client, slackUserId);
+  const user = getOrCreateUser(slackUserId, displayName ?? undefined);
+  if (displayName && !user.displayName) {
+    updateDisplayName(user.id, displayName);
+  }
+
+  // Step 1: Welcome (personalized with name)
+  const welcomeBlocks = buildWelcomeBlocks(displayName ?? undefined);
   await postMessage(client, channelId, 'Welcome to Gringo!', welcomeBlocks);
 
   // Step 2: Level picker
   const levelBlocks = buildLevelPickerBlocks();
   await postMessage(client, channelId, 'Pick your level', levelBlocks);
 
-  onboardLog.info(`Welcome DM sent to ${slackUserId}`);
+  onboardLog.info(`Welcome DM sent to ${slackUserId}${displayName ? ` (${displayName})` : ''}`);
 }
 
 /**
@@ -72,6 +98,9 @@ async function sendPostLevelDm(client: any, channelId: string, level: number): P
 
   const exerciseBlocks = buildFirstExerciseBlocks(level);
   await postMessage(client, channelId, 'Your first exercise', exerciseBlocks);
+
+  // Step 5: Completion confirmation
+  await postMessage(client, channelId, "You're all set! Head to any channel and start practicing. Dale! 🇦🇷");
 }
 
 // ── Registration ───────────────────────────────────────────

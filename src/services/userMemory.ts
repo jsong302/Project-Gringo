@@ -85,7 +85,8 @@ export function buildMemoryContext(userId: number): string {
 
   const parts: string[] = [];
 
-  parts.push(`Student: level ${user.level}, ${user.xp} XP, ${user.streakDays}-day streak`);
+  const nameLabel = user.displayName ? `${user.displayName}, ` : '';
+  parts.push(`Student: ${nameLabel}level ${user.level}, ${user.xp} XP, ${user.streakDays}-day streak`);
   parts.push(`SRS: ${cardStats.total} cards (${cardStats.learning} learning, ${cardStats.reviewing} reviewing, ${cardStats.due} due)`);
 
   if (errorSummary.length > 0) {
