@@ -44,10 +44,10 @@ const homeLog = log.withScope('home-tab');
 
 // ── Block Builders ──────────────────────────────────────────
 
-function buildProgressBar(completed: number, total: number, width: number = 20): string {
-  if (total === 0) return '░'.repeat(width);
-  const filled = Math.round((completed / total) * width);
-  return '█'.repeat(filled) + '░'.repeat(width - filled);
+function buildProgressBar(completed: number, total: number, width: number = 10): string {
+  if (total === 0) return ':white_square:'.repeat(width);
+  const filled = Math.min(Math.round((completed / total) * width), width);
+  return ':large_green_square:'.repeat(filled) + ':white_square:'.repeat(width - filled);
 }
 
 function buildProfileBlocks(slackUserId: string): Record<string, unknown>[] {
@@ -86,7 +86,7 @@ function buildProgressBlocks(slackUserId: string): Record<string, unknown>[] {
 
   const lines = [
     `*:books: Curriculum Progress*   Unit ${progress.completedCount} of ${totalUnits}`,
-    `\`${bar}\`  ${pct}%`,
+    `${bar}  ${pct}%`,
   ];
 
   if (current) {
@@ -529,8 +529,19 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
 
   // Group units by level band
   let currentBand = 0;
+  // Batch clickable units into action blocks (max 5 buttons per actions block)
+  let actionButtons: Record<string, unknown>[] = [];
+
+  const flushButtons = () => {
+    if (actionButtons.length > 0) {
+      blocks.push({ type: 'actions', elements: actionButtons });
+      actionButtons = [];
+    }
+  };
+
   for (const unit of units) {
     if (unit.levelBand !== currentBand) {
+      flushButtons();
       currentBand = unit.levelBand;
       blocks.push({
         type: 'section',
@@ -540,6 +551,8 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
 
     const prog = unitStatus.get(unit.id);
     const status = prog?.status ?? 'locked';
+    const isClickable = status === 'passed' || status === 'practicing' || status === 'active' || status === 'skipped';
+
     let icon: string;
     let suffix = '';
     switch (status) {
@@ -549,26 +562,41 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
         break;
       case 'practicing':
         icon = ':arrow_forward:';
-        suffix = ' — _in progress_';
+        suffix = ' in progress';
         break;
       case 'active':
         icon = ':radio_button:';
-        suffix = ' — _ready_';
+        suffix = ' ready';
         break;
       case 'skipped':
         icon = ':fast_forward:';
-        suffix = ' — _skipped_';
+        suffix = ' skipped';
         break;
       default:
         icon = ':lock:';
         break;
     }
 
-    blocks.push({
-      type: 'context',
-      elements: [{ type: 'mrkdwn', text: `${icon}  *${unit.unitOrder}.* ${unit.title}${suffix}` }],
-    });
+    if (isClickable) {
+      actionButtons.push({
+        type: 'button',
+        text: { type: 'plain_text', text: `${icon} ${unit.unitOrder}. ${unit.title}${suffix}` },
+        action_id: `home_goto_unit_${unit.id}`,
+        ...(status === 'practicing' || status === 'active' ? { style: 'primary' } : {}),
+      });
+      // Slack allows max 5 buttons per actions block
+      if (actionButtons.length >= 5) {
+        flushButtons();
+      }
+    } else {
+      flushButtons();
+      blocks.push({
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: `${icon}  ${unit.unitOrder}. ${unit.title}` }],
+      });
+    }
   }
+  flushButtons();
 
   // Slack Home tab has a 100-block limit — truncate if needed
   if (blocks.length > 95) {
@@ -1070,6 +1098,58 @@ export function registerHomeHandler(app: App): void {
   app.action('home_srs_hard', srsGradeHandler(2));
   app.action('home_srs_good', srsGradeHandler(4));
   app.action('home_srs_easy', srsGradeHandler(5));
+
+  // ── Curriculum: Go to unit ──────────────────────────────────
+  app.action(/^home_goto_unit_\d+$/, async ({ ack, body, client }: any) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      const actionId = body.actions?.[0]?.action_id as string;
+      const unitId = parseInt(actionId.replace('home_goto_unit_', ''), 10);
+
+      try {
+        const user = getOrCreateUser(slackUserId);
+        const { getUnit } = require('../services/curriculum');
+        const unit = getUnit(unitId);
+        if (!unit) return;
+
+        // Load shared lesson from bank
+        const lessonText = getLessonFromBank(unitId);
+        if (!lessonText) {
+          // No banked lesson — go back to dashboard
+          clearHomeSession(user.id);
+          await publishHomeTab(client, slackUserId);
+          return;
+        }
+
+        // Load or generate per-user exercise
+        let exerciseText = getCachedExercise(user.id, unitId);
+        if (!exerciseText) {
+          exerciseText = await generateUnitExercise(unit, user.id);
+          cacheExercise(user.id, unitId, exerciseText);
+        }
+
+        // Mark as practicing if it's the current active/practicing unit
+        const current = getCurrentUnit(user.id);
+        if (current && current.unit.id === unitId) {
+          markUnitPracticing(user.id, unitId);
+        }
+
+        const state = createDefaultSession(user.id, slackUserId);
+        state.view = 'lesson';
+        state.unit = unit;
+        state.lessonText = lessonText;
+        state.exerciseText = exerciseText;
+        setHomeSession(state);
+        await publishHomeTab(client, slackUserId);
+
+        homeLog.info(`Curriculum nav to Unit ${unit.unitOrder} by ${slackUserId}`);
+      } catch (err) {
+        homeLog.error(`Curriculum goto failed: ${err}`);
+      }
+    });
+  });
 
   homeLog.info('Home tab handler registered');
 }
