@@ -8,6 +8,8 @@ const userLog = log.withScope('user');
 
 // ── Types ───────────────────────────────────────────────────
 
+export type ResponseMode = 'text' | 'voice';
+
 export interface User {
   id: number;
   slackUserId: string;
@@ -21,6 +23,7 @@ export interface User {
   notificationPrefs: string;
   onboarded: boolean;
   createdAt: string;
+  responseMode: ResponseMode;
 }
 
 export interface NotificationPrefs {
@@ -166,6 +169,12 @@ export function updateTimezone(userId: number, timezone: string): void {
   userLog.info(`User ${userId} timezone → ${timezone}`);
 }
 
+export function updateResponseMode(userId: number, mode: ResponseMode): void {
+  const db = getDb();
+  db.run(`UPDATE users SET response_mode = '${mode}', updated_at = datetime('now') WHERE id = ${userId}`);
+  userLog.info(`User ${userId} response mode → ${mode}`);
+}
+
 // ── Helpers ─────────────────────────────────────────────────
 
 function dateToLocalString(date: Date, timezone: string): string {
@@ -191,6 +200,8 @@ function rowToUser(row: unknown[]): User {
     notificationPrefs: (row[9] as string) ?? '{}',
     onboarded: !!(row[10] as number),
     createdAt: row[11] as string,
+    // row[12] = updated_at, row[13] = response_mode
+    responseMode: (row[13] as ResponseMode) ?? 'text',
   };
 }
 

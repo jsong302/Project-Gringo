@@ -236,11 +236,20 @@ export function registerMessageHandlers(app: App): void {
               const blocks = formatCurriculumGradeBlocks(grade, current.unit, false);
               await say({ text: `Score: ${grade.score}`, blocks: blocks as any });
 
-              // Send bilingual correction audio (English feedback + Spanish correction)
+              // Send correction audio based on user preference
               if (grade.correction) {
-                const audio = await generateCorrectionAudio(grade.feedback, grade.correction);
-                if (audio) {
-                  await uploadAudioToSlack(client, channelId, audio, `Correction: ${grade.correction}`);
+                if (user.responseMode === 'voice') {
+                  // Bilingual: English explanation + Spanish correction in one clip
+                  const audio = await generateCorrectionAudio(grade.feedback, grade.correction);
+                  if (audio) {
+                    await uploadAudioToSlack(client, channelId, audio, `Correction: ${grade.correction}`);
+                  }
+                } else {
+                  // Text mode: Spanish-only pronunciation clip
+                  const audioBuffers = await generatePronunciationAudio([grade.correction]);
+                  if (audioBuffers[0]) {
+                    await uploadAudioToSlack(client, channelId, audioBuffers[0], grade.correction);
+                  }
                 }
               }
 

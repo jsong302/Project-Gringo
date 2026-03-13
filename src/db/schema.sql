@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS users (
     notification_prefs TEXT NOT NULL DEFAULT '{}',
     onboarded INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    response_mode TEXT NOT NULL DEFAULT 'text' CHECK (response_mode IN ('text', 'voice'))
 );
 
 -- ============================================================

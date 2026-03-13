@@ -51,6 +51,17 @@ export async function initDb(config: DbConfig): Promise<Database> {
     // Re-enable foreign keys (multi-statement exec can reset connection pragmas)
     db.exec('PRAGMA foreign_keys = ON');
 
+    // ── Column migrations (safe to re-run) ────────────────────
+    const addColumnIfMissing = (table: string, column: string, definition: string) => {
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+        dbLog.info(`Added column ${table}.${column}`);
+      } catch {
+        // Column already exists — expected on subsequent runs
+      }
+    };
+    addColumnIfMissing('users', 'response_mode', "TEXT NOT NULL DEFAULT 'text'");
+
     const result = db.exec(
       "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence'",
     );

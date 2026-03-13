@@ -11,7 +11,8 @@ import { getPromptOrThrow, interpolate } from './prompts';
 import { log } from '../utils/logger';
 import { getSetting } from './settings';
 import { saveLearnerFact } from './learnerFacts';
-import { updateLevel, updateTimezone, updateDisplayName } from './userService';
+import { updateLevel, updateTimezone, updateDisplayName, updateResponseMode } from './userService';
+import type { ResponseMode } from './userService';
 import { upsertMemory } from './userMemory';
 import { ADMIN_TOOL_DEFINITIONS, executeTool } from './adminTools';
 import { isAdmin, listSettings } from './settings';
@@ -71,18 +72,18 @@ const LOG_OBSERVATION_TOOL: ToolDefinition = {
 
 const UPDATE_PROFILE_TOOL: ToolDefinition = {
   name: 'update_profile',
-  description: 'Update the student\'s profile when they share information about themselves. Use this when the student mentions their level preference, timezone, name, interests, strengths, or weaknesses. For example: "I\'m already intermediate", "I\'m in Chicago", "I really want to learn food vocabulary", "My name is Sarah".',
+  description: 'Update the student\'s profile when they share information about themselves. Use this when the student mentions their level preference, timezone, name, interests, strengths, weaknesses, or how they prefer to receive feedback (voice memos vs text). For example: "I\'m already intermediate", "I\'m in Chicago", "I really want to learn food vocabulary", "My name is Sarah", "I prefer voice memos", "I\'d rather read the corrections".',
   input_schema: {
     type: 'object',
     properties: {
       field: {
         type: 'string',
-        enum: ['level', 'timezone', 'display_name', 'interests', 'strengths', 'weaknesses'],
+        enum: ['level', 'timezone', 'display_name', 'interests', 'strengths', 'weaknesses', 'response_mode'],
         description: 'Which profile field to update',
       },
       value: {
         type: 'string',
-        description: 'The new value. For level: "1"-"5". For timezone: IANA format (e.g. "America/Chicago"). For display_name: their name. For interests/strengths/weaknesses: a concise description.',
+        description: 'The new value. For level: "1"-"5". For timezone: IANA format (e.g. "America/Chicago"). For display_name: their name. For interests/strengths/weaknesses: a concise description. For response_mode: "voice" (bilingual audio with English explanation + Spanish pronunciation) or "text" (text feedback + Spanish-only pronunciation audio).',
       },
     },
     required: ['field', 'value'],
@@ -130,6 +131,14 @@ function handleProfileUpdate(userId: number, field: string, value: string): void
       updateDisplayName(userId, value);
       charlaLog.info(`Profile update: user ${userId} name → ${value}`);
       break;
+    case 'response_mode': {
+      const mode = value.toLowerCase().trim();
+      if (mode === 'voice' || mode === 'text') {
+        updateResponseMode(userId, mode as ResponseMode);
+        charlaLog.info(`Profile update: user ${userId} response mode → ${mode}`);
+      }
+      break;
+    }
     case 'interests':
     case 'strengths':
     case 'weaknesses':
