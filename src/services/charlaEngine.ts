@@ -10,6 +10,8 @@ import { getPromptOrThrow, interpolate } from './prompts';
 import { log } from '../utils/logger';
 import { getSetting } from './settings';
 import { saveLearnerFact } from './learnerFacts';
+import { updateLevel, updateTimezone, updateDisplayName } from './userService';
+import { upsertMemory } from './userMemory';
 
 const charlaLog = log.withScope('charla');
 
@@ -84,7 +86,62 @@ const LOG_OBSERVATION_TOOL: ToolDefinition = {
   },
 };
 
-const CHARLA_TOOLS: ToolDefinition[] = [PRONOUNCE_TOOL, LOG_OBSERVATION_TOOL];
+const UPDATE_PROFILE_TOOL: ToolDefinition = {
+  name: 'update_profile',
+  description: 'Update the student\'s profile when they share information about themselves. Use this when the student mentions their level preference, timezone, name, interests, strengths, or weaknesses. For example: "I\'m already intermediate", "I\'m in Chicago", "I really want to learn food vocabulary", "My name is Sarah".',
+  input_schema: {
+    type: 'object',
+    properties: {
+      field: {
+        type: 'string',
+        enum: ['level', 'timezone', 'display_name', 'interests', 'strengths', 'weaknesses'],
+        description: 'Which profile field to update',
+      },
+      value: {
+        type: 'string',
+        description: 'The new value. For level: "1"-"5". For timezone: IANA format (e.g. "America/Chicago"). For display_name: their name. For interests/strengths/weaknesses: a concise description.',
+      },
+    },
+    required: ['field', 'value'],
+  },
+};
+
+const CHARLA_TOOLS: ToolDefinition[] = [PRONOUNCE_TOOL, LOG_OBSERVATION_TOOL, UPDATE_PROFILE_TOOL];
+
+// ── Profile updates ─────────────────────────────────────────
+
+function handleProfileUpdate(userId: number, field: string, value: string): void {
+  switch (field) {
+    case 'level': {
+      const lvl = parseInt(value, 10);
+      if (lvl >= 1 && lvl <= 5) {
+        updateLevel(userId, lvl);
+        charlaLog.info(`Profile update: user ${userId} level → ${lvl}`);
+      }
+      break;
+    }
+    case 'timezone':
+      try {
+        new Date().toLocaleTimeString('en-GB', { timeZone: value });
+        updateTimezone(userId, value);
+        charlaLog.info(`Profile update: user ${userId} timezone → ${value}`);
+      } catch {
+        charlaLog.warn(`Invalid timezone from LLM: ${value}`);
+      }
+      break;
+    case 'display_name':
+      updateDisplayName(userId, value);
+      charlaLog.info(`Profile update: user ${userId} name → ${value}`);
+      break;
+    case 'interests':
+    case 'strengths':
+    case 'weaknesses':
+      // Store as a learner fact so it feeds into the memory profile
+      saveLearnerFact(userId, field === 'interests' ? 'interest' : field === 'strengths' ? 'strength' : 'knowledge_gap', value, 'tool');
+      charlaLog.info(`Profile update: user ${userId} ${field} → ${value}`);
+      break;
+  }
+}
 
 // ── Message building ────────────────────────────────────────
 
@@ -153,6 +210,9 @@ export async function generateCharlaResponse(
         saveLearnerFact(userId, category, fact, 'tool');
         observationCount++;
       }
+    } else if (toolUse.name === 'update_profile' && userId) {
+      const { field, value } = toolUse.input as { field: string; value: string };
+      handleProfileUpdate(userId, field, value);
     }
   }
 
@@ -167,6 +227,8 @@ export async function generateCharlaResponse(
       tool_use_id: tu.id,
       content: tu.name === 'pronounce'
         ? 'Audio pronunciation will be sent as a voice clip.'
+        : tu.name === 'update_profile'
+        ? 'Profile updated.'
         : 'Observation logged.',
     }));
 
