@@ -257,6 +257,11 @@ function buildLessonView(slackUserId: string, state: HomeSessionState): Record<s
           text: { type: 'plain_text', text: ':microphone: Send voice memo in DMs' },
           action_id: 'home_voice_hint',
         },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Dashboard' },
+          action_id: 'home_back_dashboard',
+        },
       ],
     });
   }

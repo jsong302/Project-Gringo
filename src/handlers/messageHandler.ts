@@ -245,93 +245,143 @@ export function registerMessageHandlers(app: App): void {
             if (!grade.isAttempt) {
               msgLog.info(`Non-exercise message detected by grader during practicing: "${(responseText ?? '').slice(0, 60)}"`);
               // Don't return — fall through to charla conversation handler below
-            } else if (grade.passed) {
-              const { leveledUp, newLevel } = markUnitPassed(user.id, current.unit.id, grade.score);
-
-              // Delete all tracked lesson/exercise/grading messages to keep DM clean
-              const oldMessages = clearTrackedMessages(user.id);
-              for (const msgTs of oldMessages) {
-                try {
-                  await client.chat.delete({ channel: channelId, ts: msgTs });
-                } catch {
-                  // Message may already be deleted or too old — ignore
-                }
-              }
-
-              // Post compact summary instead
-              const summaryText = leveledUp
-                ? `:white_check_mark: *Unit ${current.unit.unitOrder}: ${current.unit.title}* — Passed (${grade.score}/5)\n:arrow_up: *Leveled up to Level ${newLevel}!*`
-                : `:white_check_mark: *Unit ${current.unit.unitOrder}: ${current.unit.title}* — Passed (${grade.score}/5)`;
-
-              const summaryResult = await say({
-                text: summaryText,
-                blocks: [
-                  {
-                    type: 'section',
-                    text: { type: 'mrkdwn', text: summaryText },
-                  },
-                  {
-                    type: 'context',
-                    elements: [{ type: 'mrkdwn', text: '_Use `/gringo next` to continue to the next unit!_' }],
-                  },
-                ] as any,
-              });
-              // Don't track the summary — it stays permanently
-              updateStreak(user.id);
-
-              // Refresh Home tab to show pass state
-              const passState = createDefaultSession(user.id, slackUserId);
-              passState.view = 'grade';
-              passState.unit = current.unit;
-              passState.lastGradeResult = grade;
-              setHomeSession(passState);
-              publishHomeTab(client, slackUserId).catch(() => {});
-              return;
-
             } else {
-              const attempts = recordAttempt(user.id, current.unit.id, grade.score);
+              // Check if the lesson is on the Home tab — if so, redirect grading there
+              const homeState = getHomeSession(user.id);
+              const isHomeTabLesson = homeState && (homeState.view === 'lesson' || homeState.view === 'grade');
+              const isVoiceMemo = audioFile && !text;
 
-              if (user.responseMode === 'voice') {
-                // Voice mode: minimal text + voice memo with full explanation
-                const emoji = ':x:';
-                const minimalText = `${emoji} Score: ${grade.score}/5 — need ${current.unit.passThreshold}+ to pass. Listen to the voice memo below for feedback.`;
-                const minimalResult = await say({ text: minimalText });
-                trackUnitMessage(user.id, (minimalResult as any)?.ts);
+              if (grade.passed) {
+                const { leveledUp, newLevel } = markUnitPassed(user.id, current.unit.id, grade.score);
+                updateStreak(user.id);
 
-                if (grade.correction) {
-                  const audio = await generateCorrectionAudio(grade.feedback, grade.correction);
-                  if (audio) {
-                    await uploadAudioToSlack(client, channelId, audio, `Correction: ${grade.correction}`);
+                if (isHomeTabLesson) {
+                  // Grade results go to Home tab
+                  const passState = homeState ?? createDefaultSession(user.id, slackUserId);
+                  passState.view = 'grade';
+                  passState.unit = current.unit;
+                  passState.lastGradeResult = grade;
+                  setHomeSession(passState);
+                  await publishHomeTab(client, slackUserId);
+
+                  // Brief DM confirmation pointing to Home tab
+                  await say({ text: `:white_check_mark: *Passed!* (${grade.score}/5) — Check your Home tab for details.` });
+
+                  // Send pronunciation audio in DM if there's a correction
+                  if (grade.correction) {
+                    try {
+                      const audioBuffers = await generatePronunciationAudio([grade.correction]);
+                      if (audioBuffers[0]) {
+                        await uploadAudioToSlack(client, channelId, audioBuffers[0], grade.correction);
+                      }
+                    } catch { /* audio is best-effort */ }
                   }
+                } else {
+                  // Legacy DM-only flow
+                  const oldMessages = clearTrackedMessages(user.id);
+                  for (const msgTs of oldMessages) {
+                    try {
+                      await client.chat.delete({ channel: channelId, ts: msgTs });
+                    } catch { /* Message may already be deleted */ }
+                  }
+
+                  const summaryText = leveledUp
+                    ? `:white_check_mark: *Unit ${current.unit.unitOrder}: ${current.unit.title}* — Passed (${grade.score}/5)\n:arrow_up: *Leveled up to Level ${newLevel}!*`
+                    : `:white_check_mark: *Unit ${current.unit.unitOrder}: ${current.unit.title}* — Passed (${grade.score}/5)`;
+
+                  await say({
+                    text: summaryText,
+                    blocks: [
+                      { type: 'section', text: { type: 'mrkdwn', text: summaryText } },
+                      { type: 'context', elements: [{ type: 'mrkdwn', text: '_Use `/gringo next` to continue to the next unit!_' }] },
+                    ] as any,
+                  });
+
+                  // Also update Home tab
+                  const passState = createDefaultSession(user.id, slackUserId);
+                  passState.view = 'grade';
+                  passState.unit = current.unit;
+                  passState.lastGradeResult = grade;
+                  setHomeSession(passState);
+                  publishHomeTab(client, slackUserId).catch(() => {});
                 }
+                return;
+
               } else {
-                // Text mode: full text feedback blocks + Spanish-only pronunciation
-                const blocks = formatCurriculumGradeBlocks(grade, current.unit, false);
-                const gradeResult = await say({ text: `Score: ${grade.score}`, blocks: blocks as any });
-                trackUnitMessage(user.id, (gradeResult as any)?.ts);
+                const attempts = recordAttempt(user.id, current.unit.id, grade.score);
+                updateStreak(user.id);
 
-                if (grade.correction) {
-                  const audioBuffers = await generatePronunciationAudio([grade.correction]);
-                  if (audioBuffers[0]) {
-                    await uploadAudioToSlack(client, channelId, audioBuffers[0], grade.correction);
+                if (isHomeTabLesson) {
+                  // Grade results go to Home tab
+                  const failState = homeState ?? createDefaultSession(user.id, slackUserId);
+                  failState.view = 'grade';
+                  failState.unit = current.unit;
+                  failState.lastGradeResult = grade;
+                  failState.exerciseText = failState.exerciseText ?? (current.unit.exercisePrompt ?? current.unit.title);
+                  setHomeSession(failState);
+                  await publishHomeTab(client, slackUserId);
+
+                  // Brief DM notification pointing to Home tab
+                  await say({ text: `:x: Score: ${grade.score}/5 — Check your Home tab for feedback and try again.` });
+
+                  // Send audio correction in DM
+                  if (grade.correction) {
+                    try {
+                      if (user.responseMode === 'voice') {
+                        const audio = await generateCorrectionAudio(grade.feedback, grade.correction);
+                        if (audio) {
+                          await uploadAudioToSlack(client, channelId, audio, `Correction: ${grade.correction}`);
+                        }
+                      } else {
+                        const audioBuffers = await generatePronunciationAudio([grade.correction]);
+                        if (audioBuffers[0]) {
+                          await uploadAudioToSlack(client, channelId, audioBuffers[0], grade.correction);
+                        }
+                      }
+                    } catch { /* audio is best-effort */ }
                   }
+                } else {
+                  // Legacy DM-only flow
+                  if (user.responseMode === 'voice') {
+                    const emoji = ':x:';
+                    const minimalText = `${emoji} Score: ${grade.score}/5 — need ${current.unit.passThreshold}+ to pass. Listen to the voice memo below for feedback.`;
+                    const minimalResult = await say({ text: minimalText });
+                    trackUnitMessage(user.id, (minimalResult as any)?.ts);
+
+                    if (grade.correction) {
+                      const audio = await generateCorrectionAudio(grade.feedback, grade.correction);
+                      if (audio) {
+                        await uploadAudioToSlack(client, channelId, audio, `Correction: ${grade.correction}`);
+                      }
+                    }
+                  } else {
+                    const blocks = formatCurriculumGradeBlocks(grade, current.unit, false);
+                    const gradeResult = await say({ text: `Score: ${grade.score}`, blocks: blocks as any });
+                    trackUnitMessage(user.id, (gradeResult as any)?.ts);
+
+                    if (grade.correction) {
+                      const audioBuffers = await generatePronunciationAudio([grade.correction]);
+                      if (audioBuffers[0]) {
+                        await uploadAudioToSlack(client, channelId, audioBuffers[0], grade.correction);
+                      }
+                    }
+                  }
+
+                  if (attempts >= 3) {
+                    const hintResult = await say({ text: "_Hint: Try reviewing the lesson above and focus on the key vocabulary. You've got this!_" });
+                    trackUnitMessage(user.id, (hintResult as any)?.ts);
+                  }
+
+                  // Also update Home tab
+                  const failState = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+                  failState.view = 'grade';
+                  failState.unit = current.unit;
+                  failState.lastGradeResult = grade;
+                  setHomeSession(failState);
+                  publishHomeTab(client, slackUserId).catch(() => {});
                 }
+                return;
               }
-
-              if (attempts >= 3) {
-                const hintResult = await say({ text: "_Hint: Try reviewing the lesson above and focus on the key vocabulary. You've got this!_" });
-                trackUnitMessage(user.id, (hintResult as any)?.ts);
-              }
-              updateStreak(user.id);
-
-              // Refresh Home tab to show fail state
-              const failState = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
-              failState.view = 'grade';
-              failState.unit = current.unit;
-              failState.lastGradeResult = grade;
-              setHomeSession(failState);
-              publishHomeTab(client, slackUserId).catch(() => {});
-              return;
             }
             // If !grade.isAttempt, we fall through to charla below
           }
