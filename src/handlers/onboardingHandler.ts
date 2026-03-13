@@ -31,8 +31,10 @@ import {
   processAnswer,
   getActiveTest,
   clearActiveTest,
+  finalizePlacement,
   formatQuestionBlocks,
   formatPlacementResultBlocks,
+  formatGapReviewBlocks,
 } from '../services/placementTest';
 import { initializeUserProgress } from '../services/curriculumDelivery';
 
@@ -229,28 +231,42 @@ export function registerOnboardingHandlers(app: App): void {
         await postMessage(client, channelId, `${emoji} ${result.correct ? 'Correct!' : 'Not quite.'}`);
 
         if (result.testComplete) {
-          // Show placement result
           const state = getActiveTest(slackUserId);
           const totalCorrect = state
             ? state.answers.filter((a) => a.correct).length
             : 0;
           const totalQuestions = state?.answers.length ?? 0;
 
-          const resultBlocks = formatPlacementResultBlocks(
-            result.placedAtUnit,
-            result.derivedLevel,
-            totalCorrect,
-            totalQuestions,
-          );
-          await postMessage(client, channelId, 'Placement complete!', resultBlocks);
+          if (result.hasGaps) {
+            // Gaps detected — show review and let user choose
+            const gapBlocks = formatGapReviewBlocks(
+              result.failedLevels,
+              result.placedAtUnit,
+              result.derivedLevel,
+              result.skipAheadUnit,
+              result.skipAheadLevel,
+              totalCorrect,
+              totalQuestions,
+            );
+            await postMessage(client, channelId, 'Placement complete — review your results', gapBlocks);
+            // Don't finalize yet — wait for button choice
+          } else {
+            // No gaps — show result and finalize
+            const resultBlocks = formatPlacementResultBlocks(
+              result.placedAtUnit,
+              result.derivedLevel,
+              totalCorrect,
+              totalQuestions,
+            );
+            await postMessage(client, channelId, 'Placement complete!', resultBlocks);
 
-          // Finalize onboarding
-          const user = getOrCreateUser(slackUserId);
-          markOnboarded(user.id);
-          welcomeSent.delete(slackUserId);
-          clearActiveTest(slackUserId);
+            const user = getOrCreateUser(slackUserId);
+            markOnboarded(user.id);
+            welcomeSent.delete(slackUserId);
+            clearActiveTest(slackUserId);
 
-          await sendResponseModePicker(client, channelId);
+            await sendResponseModePicker(client, channelId);
+          }
         } else if (result.nextQuestion) {
           // Send next question
           const test = getActiveTest(slackUserId);
@@ -261,6 +277,41 @@ export function registerOnboardingHandlers(app: App): void {
         }
       } catch (err) {
         onboardLog.error(`Placement answer error for ${slackUserId}: ${err}`);
+      }
+    });
+  }
+
+  // ── Gap resolution button handlers ──────────────────────────
+
+  for (const action of ['placement_fill_gaps', 'placement_skip_ahead'] as const) {
+    app.action(action, async ({ ack, body, client }) => {
+      await ack();
+      const slackUserId = body.user.id;
+      const channelId = (body as any).channel?.id ?? (body as any).container?.channel_id;
+
+      try {
+        const value = JSON.parse((body as any).actions?.[0]?.value ?? '{}');
+        const unitOrder = value.unitOrder ?? 1;
+        const level = value.level ?? 1;
+
+        finalizePlacement(slackUserId, unitOrder, level);
+
+        const user = getOrCreateUser(slackUserId);
+        markOnboarded(user.id);
+        welcomeSent.delete(slackUserId);
+
+        const choice = action === 'placement_fill_gaps' ? 'fill the gaps' : 'skip ahead';
+        onboardLog.info(`User ${slackUserId} chose to ${choice}: unit ${unitOrder}, level ${level}`);
+
+        if (channelId) {
+          const label = action === 'placement_fill_gaps'
+            ? `You'll start at *Unit ${unitOrder}* (Level ${level}) to build a solid foundation. You'll move through the basics quickly!`
+            : `You'll start at *Unit ${unitOrder}* (Level ${level}). If you hit a wall, you can always go back with \`/gringo next\`.`;
+          await postMessage(client, channelId, label);
+          await sendResponseModePicker(client, channelId);
+        }
+      } catch (err) {
+        onboardLog.error(`Gap resolution failed for ${slackUserId}: ${err}`);
       }
     });
   }

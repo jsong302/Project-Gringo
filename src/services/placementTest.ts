@@ -100,6 +100,13 @@ export interface AnswerResult {
   testComplete: boolean;
   placedAtUnit: number;
   derivedLevel: number;
+  /** If true, user passed higher levels but failed lower ones — needs gap review */
+  hasGaps: boolean;
+  /** Levels the user failed (only set when hasGaps is true) */
+  failedLevels: number[];
+  /** Where they'd start if skipping ahead (only set when hasGaps is true) */
+  skipAheadUnit: number;
+  skipAheadLevel: number;
 }
 
 /**
@@ -118,23 +125,42 @@ export function processAnswer(slackUserId: string, selectedIndex: number): Answe
   // Check if test is complete
   if (state.currentQuestionIndex >= state.questionPool.length) {
     state.completed = true;
-    const { unitOrder, level } = calculatePlacement(state);
+    const placement = calculatePlacement(state);
 
-    // Save to DB
-    savePlacementResult(state, unitOrder, level);
+    if (placement.hasGaps) {
+      // Don't finalize yet — user needs to choose between filling gaps or skipping ahead
+      ptLog.info(`Placement has gaps for ${slackUserId}: failed levels [${placement.failedLevels}], gap→unit ${placement.gapUnit} vs skip→unit ${placement.skipUnit}`);
 
-    // Initialize curriculum progress
-    initializeUserProgress(state.userId, unitOrder);
+      return {
+        correct,
+        nextQuestion: null,
+        testComplete: true,
+        placedAtUnit: placement.gapUnit,
+        derivedLevel: placement.gapLevel,
+        hasGaps: true,
+        failedLevels: placement.failedLevels,
+        skipAheadUnit: placement.skipUnit,
+        skipAheadLevel: placement.skipLevel,
+      };
+    }
 
-    ptLog.info(`Placement complete for ${slackUserId}: unit ${unitOrder}, level ${level}`);
+    // No gaps — finalize immediately
+    savePlacementResult(state, placement.gapUnit, placement.gapLevel);
+    initializeUserProgress(state.userId, placement.gapUnit);
+
+    ptLog.info(`Placement complete for ${slackUserId}: unit ${placement.gapUnit}, level ${placement.gapLevel}`);
     activeTests.delete(slackUserId);
 
     return {
       correct,
       nextQuestion: null,
       testComplete: true,
-      placedAtUnit: unitOrder,
-      derivedLevel: level,
+      placedAtUnit: placement.gapUnit,
+      derivedLevel: placement.gapLevel,
+      hasGaps: false,
+      failedLevels: [],
+      skipAheadUnit: 0,
+      skipAheadLevel: 0,
     };
   }
 
@@ -144,12 +170,28 @@ export function processAnswer(slackUserId: string, selectedIndex: number): Answe
     testComplete: false,
     placedAtUnit: 0,
     derivedLevel: 0,
+    hasGaps: false,
+    failedLevels: [],
+    skipAheadUnit: 0,
+    skipAheadLevel: 0,
   };
 }
 
 // ── Placement calculation ───────────────────────────────────
 
-function calculatePlacement(state: PlacementState): { unitOrder: number; level: number } {
+interface PlacementCalc {
+  /** Unit for the conservative (gap-filling) placement */
+  gapUnit: number;
+  gapLevel: number;
+  /** Unit for skip-ahead placement (ignore gaps) */
+  skipUnit: number;
+  skipLevel: number;
+  /** Whether there are gaps (failed lower levels but passed higher ones) */
+  hasGaps: boolean;
+  failedLevels: number[];
+}
+
+function calculatePlacement(state: PlacementState): PlacementCalc {
   // Group answers by level and calculate pass rate per level
   const levelScores = new Map<number, { correct: number; total: number }>();
 
@@ -161,44 +203,59 @@ function calculatePlacement(state: PlacementState): { unitOrder: number; level: 
     levelScores.set(level, existing);
   }
 
-  // Find the highest level where they passed most questions (>= 50%)
-  let highestPassedLevel = 0;
+  // Scan ALL levels (no early break) to detect gaps
+  const passedLevels: number[] = [];
+  const failedLevels: number[] = [];
+
   for (let level = 1; level <= 4; level++) {
     const scores = levelScores.get(level);
     if (!scores) continue;
     if (scores.correct / scores.total >= 0.5) {
-      highestPassedLevel = level;
+      passedLevels.push(level);
     } else {
-      break; // Stop at first failed level
+      failedLevels.push(level);
     }
   }
 
-  // Map to curriculum unit
+  const highestPassedLevel = passedLevels.length > 0 ? Math.max(...passedLevels) : 0;
+  const lowestFailedLevel = failedLevels.length > 0 ? Math.min(...failedLevels) : 0;
+
+  // Gaps = failed a lower level but passed a higher one
+  const hasGaps = lowestFailedLevel > 0 && highestPassedLevel > lowestFailedLevel;
+
   const curriculum = getCurriculum();
   if (curriculum.length === 0) {
-    return { unitOrder: 1, level: 1 };
+    return { gapUnit: 1, gapLevel: 1, skipUnit: 1, skipLevel: 1, hasGaps: false, failedLevels: [] };
   }
 
-  if (highestPassedLevel === 0) {
-    // Failed level 1 — start from the very beginning
-    return { unitOrder: 1, level: 1 };
-  }
+  // Conservative placement: first unit of the lowest failed level (or level 1)
+  const gapPlacement = getPlacementForLevel(lowestFailedLevel > 0 ? lowestFailedLevel : 1, curriculum);
 
-  // Place at the first unit of the NEXT level (they demonstrated this level)
-  const nextLevel = Math.min(highestPassedLevel + 1, 4);
-  const targetUnit = getFirstUnitForLevel(nextLevel);
+  // Skip-ahead placement: first unit of (highest passed level + 1)
+  const skipPlacement = highestPassedLevel > 0
+    ? getPlacementForLevel(Math.min(highestPassedLevel + 1, 4), curriculum)
+    : gapPlacement;
+
+  return {
+    gapUnit: gapPlacement.unitOrder,
+    gapLevel: gapPlacement.level,
+    skipUnit: skipPlacement.unitOrder,
+    skipLevel: skipPlacement.level,
+    hasGaps,
+    failedLevels: hasGaps ? failedLevels.filter((l) => l < highestPassedLevel) : [],
+  };
+}
+
+function getPlacementForLevel(level: number, curriculum: ReturnType<typeof getCurriculum>): { unitOrder: number; level: number } {
+  const targetUnit = getFirstUnitForLevel(level);
   if (targetUnit) {
     return { unitOrder: targetUnit.unitOrder, level: targetUnit.levelBand };
   }
-
-  // Fallback: place at last unit of the passed level
-  const lastPassedUnit = curriculum
-    .filter((u) => u.levelBand === highestPassedLevel)
-    .pop();
-  if (lastPassedUnit) {
-    return { unitOrder: lastPassedUnit.unitOrder, level: lastPassedUnit.levelBand };
+  // Fallback: last unit of the previous level band
+  const fallback = curriculum.filter((u) => u.levelBand < level).pop();
+  if (fallback) {
+    return { unitOrder: fallback.unitOrder, level: fallback.levelBand };
   }
-
   return { unitOrder: 1, level: 1 };
 }
 
@@ -228,7 +285,96 @@ function savePlacementResult(state: PlacementState, unitOrder: number, level: nu
   );
 }
 
+// ── Deferred placement (gap resolution) ─────────────────────
+
+/**
+ * Finalize placement after the user chooses to fill gaps or skip ahead.
+ * Called from onboarding button handlers.
+ */
+export function finalizePlacement(slackUserId: string, unitOrder: number, level: number): void {
+  const state = activeTests.get(slackUserId);
+  if (state) {
+    savePlacementResult(state, unitOrder, level);
+    initializeUserProgress(state.userId, unitOrder);
+    updateLevel(state.userId, level);
+    ptLog.info(`Gap resolution for ${slackUserId}: placed at unit ${unitOrder}, level ${level}`);
+    activeTests.delete(slackUserId);
+  }
+}
+
+// ── Level topic descriptions (for gap review) ────────────────
+
+const LEVEL_TOPICS: Record<number, string> = {
+  1: 'greetings, numbers, ser/estar, basic present tense',
+  2: 'past tense, voseo basics, daily vocabulary, simple questions',
+  3: 'subjunctive mood, lunfardo basics, expressing opinions',
+  4: 'complex grammar, vesre, Argentine idioms, advanced lunfardo',
+};
+
 // ── Slack formatting ────────────────────────────────────────
+
+export function formatGapReviewBlocks(
+  failedLevels: number[],
+  gapUnit: number,
+  gapLevel: number,
+  skipUnit: number,
+  skipLevel: number,
+  correctCount: number,
+  totalCount: number,
+): any[] {
+  const percentage = Math.round((correctCount / totalCount) * 100);
+  const gapTopics = failedLevels.map((l) => `• *Level ${l}*: ${LEVEL_TOPICS[l] ?? 'general skills'}`).join('\n');
+
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Placement complete!* You got ${correctCount}/${totalCount} correct (${percentage}%).`,
+      },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `You showed strong skills on the harder questions, but it looks like you might have some gaps in the basics:\n\n${gapTopics}`,
+      },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: 'Where would you like to start?',
+      },
+    },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: `Fill the gaps (Unit ${gapUnit}, Level ${gapLevel})`, emoji: true },
+          action_id: 'placement_fill_gaps',
+          value: JSON.stringify({ unitOrder: gapUnit, level: gapLevel }),
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: `Skip ahead (Unit ${skipUnit}, Level ${skipLevel})`, emoji: true },
+          action_id: 'placement_skip_ahead',
+          value: JSON.stringify({ unitOrder: skipUnit, level: skipLevel }),
+        },
+      ],
+    },
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: "_Filling gaps means you'll breeze through the easy stuff fast and build a solid foundation. Skipping ahead jumps to where your strongest skills are._",
+        },
+      ],
+    },
+  ];
+}
 
 export function formatQuestionBlocks(question: PlacementQuestion, questionNum: number, totalQuestions: number): any[] {
   const blocks: any[] = [
