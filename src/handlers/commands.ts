@@ -9,6 +9,7 @@ import { registerMessageHandlers } from './messageHandler';
 import { handleAdmin } from './adminHandler';
 import { registerOnboardingHandlers, handleOnboardCommand } from './onboardingHandler';
 import { handleDesafio, registerDesafioActions } from './desafioHandler';
+import { registerHomeHandler } from './homeHandler';
 import {
   getOrCreateUser,
   updateLevel,
@@ -199,10 +200,12 @@ export function registerCommands(app: App): void {
             const cardStats = getUserCardStats(user.id);
             const errorSummary = getErrorSummary(user.id);
 
+            const responseLabel = user.responseMode === 'voice' ? 'Voice' : 'Text';
             const sections: string[] = [
               `*Name:* ${user.displayName ?? 'Unknown'}`,
               `*Level:* ${user.level}/5 | *Streak:* ${user.streakDays} day${user.streakDays !== 1 ? 's' : ''}`,
               `*Timezone:* ${user.timezone}`,
+              `*Feedback mode:* ${responseLabel}`,
               `*SRS Cards:* ${cardStats.total} (${cardStats.due} due)`,
             ];
 
@@ -385,6 +388,9 @@ export function registerCommands(app: App): void {
 
   // Register notification preference action handlers
   registerNotificationActions(app);
+
+  // Register App Home tab handler
+  registerHomeHandler(app);
 
   cmdLog.info('Slash commands registered');
 }

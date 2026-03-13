@@ -231,6 +231,19 @@ export function buildCharlaSystemPrompt(
     prompt += `\n\nThe student's name is ${displayName}. Use their name occasionally to make the conversation feel personal.`;
   }
 
+  // Inject user preferences so charla can mention them when asked about profile
+  if (userId) {
+    try {
+      const user = getUserById(userId);
+      if (user) {
+        const feedbackMode = user.responseMode === 'voice' ? 'Voice (bilingual audio feedback)' : 'Text (written feedback + Spanish pronunciation)';
+        prompt += `\n\nStudent preferences:\n- Feedback mode: ${feedbackMode}\n- Timezone: ${user.timezone}`;
+      }
+    } catch {
+      // User not found — skip
+    }
+  }
+
   if (memoryContext) {
     prompt += `\n\n--- Learner Profile ---\n${memoryContext}\n\nUse this profile to personalize your teaching. Focus on their weaknesses, build on their strengths, and reference their interests when possible.`;
   }

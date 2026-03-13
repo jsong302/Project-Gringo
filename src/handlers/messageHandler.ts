@@ -281,20 +281,27 @@ export function registerMessageHandlers(app: App): void {
 
             } else {
               const attempts = recordAttempt(user.id, current.unit.id, grade.score);
-              const blocks = formatCurriculumGradeBlocks(grade, current.unit, false);
-              const gradeResult = await say({ text: `Score: ${grade.score}`, blocks: blocks as any });
-              trackUnitMessage(user.id, (gradeResult as any)?.ts);
 
-              // Send correction audio based on user preference
-              if (grade.correction) {
-                if (user.responseMode === 'voice') {
-                  // Bilingual: English explanation + Spanish correction in one clip
+              if (user.responseMode === 'voice') {
+                // Voice mode: minimal text + voice memo with full explanation
+                const emoji = ':x:';
+                const minimalText = `${emoji} Score: ${grade.score}/5 — need ${current.unit.passThreshold}+ to pass. Listen to the voice memo below for feedback.`;
+                const minimalResult = await say({ text: minimalText });
+                trackUnitMessage(user.id, (minimalResult as any)?.ts);
+
+                if (grade.correction) {
                   const audio = await generateCorrectionAudio(grade.feedback, grade.correction);
                   if (audio) {
                     await uploadAudioToSlack(client, channelId, audio, `Correction: ${grade.correction}`);
                   }
-                } else {
-                  // Text mode: Spanish-only pronunciation clip
+                }
+              } else {
+                // Text mode: full text feedback blocks + Spanish-only pronunciation
+                const blocks = formatCurriculumGradeBlocks(grade, current.unit, false);
+                const gradeResult = await say({ text: `Score: ${grade.score}`, blocks: blocks as any });
+                trackUnitMessage(user.id, (gradeResult as any)?.ts);
+
+                if (grade.correction) {
                   const audioBuffers = await generatePronunciationAudio([grade.correction]);
                   if (audioBuffers[0]) {
                     await uploadAudioToSlack(client, channelId, audioBuffers[0], grade.correction);

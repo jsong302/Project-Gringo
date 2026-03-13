@@ -61,8 +61,8 @@ function buildSsml(text: string, voice: string, speed: number): string {
  * Uses separate voices to keep Elena's authentic Argentine accent for Spanish.
  */
 function buildMultiVoiceSsml(
-  segments: Array<{ text: string; voice: string }>,
-  speed: number,
+  segments: Array<{ text: string; voice: string; speed?: number }>,
+  defaultSpeed: number,
 ): string {
   const parts = segments.map((seg) => {
     const escaped = seg.text
@@ -73,6 +73,7 @@ function buildMultiVoiceSsml(
       .replace(/'/g, '&apos;');
 
     const lang = seg.voice.split('-').slice(0, 2).join('-');
+    const speed = seg.speed ?? defaultSpeed;
     const content = speed !== 1.0
       ? `<prosody rate="${speed.toFixed(2)}">${escaped}</prosody>`
       : escaped;
@@ -178,15 +179,17 @@ export async function synthesizeBilingualSpeech(
   const spanishVoice = getSetting('tts.voice', 'es-AR-ElenaNeural') as string;
   const englishVoice = getSetting('tts.english_voice', 'en-US-AriaNeural') as string;
   const defaultSpeed = getSetting('tts.speed', 1.0) as number;
-  const effectiveSpeed = speed ?? defaultSpeed;
+  const englishSpeed = getSetting('tts.english_speed', 1.0) as number;
+  const spanishSpeed = getSetting('tts.spanish_speed', 0.85) as number;
   const traceId = getTraceId();
 
   const voiceSegments = segments.map((seg) => ({
     text: seg.text,
     voice: seg.lang === 'en' ? englishVoice : spanishVoice,
+    speed: speed ?? (seg.lang === 'en' ? englishSpeed : spanishSpeed),
   }));
 
-  const ssml = buildMultiVoiceSsml(voiceSegments, effectiveSpeed);
+  const ssml = buildMultiVoiceSsml(voiceSegments, defaultSpeed);
   const url = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
 
   try {

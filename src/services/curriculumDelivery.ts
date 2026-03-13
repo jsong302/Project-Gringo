@@ -575,10 +575,6 @@ export function formatGradeBlocks(result: GradeResult, unit: CurriculumUnit, pas
       type: 'section',
       text: { type: 'mrkdwn', text: `*Correct answer:* _${result.correction}_` },
     });
-    blocks.push({
-      type: 'context',
-      elements: [{ type: 'mrkdwn', text: ':speaker: _Listen to the audio below for an explanation and the correct pronunciation._' }],
-    });
   }
 
   if (passed) {
