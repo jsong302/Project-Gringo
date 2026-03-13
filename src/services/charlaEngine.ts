@@ -155,7 +155,7 @@ export async function processCharlaMessage(
 
     if (lastBotMessage) {
       charlaLog.info('User triggered "no entiendo" — generating explanation');
-      return generateExplanation(lastBotMessage.content, userLevel);
+      return generateExplanation(lastBotMessage.content as string, userLevel);
     }
   }
 

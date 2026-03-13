@@ -15,7 +15,7 @@ import {
 } from './settings';
 import { getAllUsers, getUserById, updateLevel } from './userService';
 import { getUserCardStats } from './srsRepository';
-import { getErrorSummary, getRecentErrors, getTotalErrorCount, logLearningError } from './errorTracker';
+import { getErrorSummary, getRecentErrors, getTotalErrorCount, logLearningError, type ErrorCategory } from './errorTracker';
 import { getMemory, getMemoryForPrompt } from './userMemory';
 import { listPrompts, upsertPrompt, getPrompt } from './prompts';
 import { addXp, updateStreak } from './userService';
@@ -492,7 +492,7 @@ register('log_learning_error', (input) => {
   const userSaid = input.user_said as string | undefined;
   const correction = input.correction as string | undefined;
 
-  const id = logLearningError(userId, category, description, userSaid, correction, 'text');
+  const id = logLearningError(userId, category as ErrorCategory, description, userSaid, correction, 'text');
   return JSON.stringify({ success: true, errorId: id });
 });
 

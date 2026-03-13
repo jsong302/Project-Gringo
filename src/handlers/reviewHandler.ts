@@ -171,7 +171,7 @@ export function registerReviewActions(app: App): void {
         await respond({
           response_type: 'ephemeral',
           text: `Respuesta: ${presented.content.back}`,
-          blocks,
+          blocks: blocks as any,
         });
       } catch (err) {
         reviewLog.error(`Show answer failed: ${err}`);
@@ -210,7 +210,7 @@ export function registerReviewActions(app: App): void {
               await respond({
                 response_type: 'ephemeral',
                 text: 'Repaso completado!',
-                blocks,
+                blocks: blocks as any,
               });
             }
             return;
@@ -236,7 +236,7 @@ export function registerReviewActions(app: App): void {
           await respond({
             response_type: 'ephemeral',
             text: `Repaso: Carta ${next.cardNumber}/${next.totalCards}`,
-            blocks,
+            blocks: blocks as any,
           });
         } catch (err) {
           reviewLog.error(`Score (${label}) failed: ${err}`);

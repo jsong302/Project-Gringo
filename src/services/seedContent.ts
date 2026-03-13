@@ -215,6 +215,7 @@ interface PhraseEntry {
   difficulty: number;
   context?: string;
   culturalNotes?: string;
+  example?: string;
 }
 
 export const PHRASES: PhraseEntry[] = [
