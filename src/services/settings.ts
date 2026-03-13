@@ -170,8 +170,8 @@ export const DEFAULT_SETTINGS: Array<{ key: string; value: unknown; description:
 
   // Channels
   { key: 'channels.charla', value: '', description: 'Slack channel ID for charla (empty = DMs + @mentions anywhere)' },
-  { key: 'channels.lessons', value: '', description: 'Slack channel ID for #daily-lesson' },
-  { key: 'channels.lunfardo', value: '', description: 'Slack channel ID for #lunfardo-del-dia' },
+  { key: 'channels.lessons', value: 'C0AM6R02F9N', description: 'Slack channel ID for #daily-lesson' },
+  { key: 'channels.lunfardo', value: 'C0AL94MKSRK', description: 'Slack channel ID for #lunfardo-del-dia' },
   { key: 'channels.repaso', value: '', description: 'Slack channel ID for repaso (empty = DMs only via /gringo repaso)' },
   { key: 'channels.admin', value: '', description: 'Slack channel ID for admin-only channel' },
 
