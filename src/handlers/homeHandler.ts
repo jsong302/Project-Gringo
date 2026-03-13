@@ -681,7 +681,7 @@ export function buildHomeBlocks(slackUserId: string): Record<string, unknown>[] 
           text: [
             '*How to get started:*',
             '',
-            ':one: *Check your DMs* — I sent you a welcome message',
+            ':one: *Check your DMs* — I sent you a welcome message (or type `/gringo onboard` to resend it)',
             ':two: *Take the placement test* (or skip if you\'re a beginner)',
             ':three: *Pick your feedback style* — text or voice',
             ':four: *Come back here* — this Home tab becomes your dashboard for lessons, exercises, and progress',
