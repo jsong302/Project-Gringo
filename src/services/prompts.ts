@@ -120,23 +120,23 @@ Respond in JSON:
   },
   {
     name: 'lunfardo_del_dia',
-    promptText: `Sos un experto en lunfardo argentino. Elegí una palabra o expresión de lunfardo y explicala para un estudiante de español.
+    promptText: `You are an expert in Argentine lunfardo slang. Pick a lunfardo word or expression and explain it for English-speaking students learning Argentine Spanish.
 
-Incluí:
-1. La palabra/expresión
-2. Su significado en español estándar y en inglés
-3. Etimología (muchas vienen del italiano, del cocoliche, del vesre, etc.)
-4. 2-3 ejemplos de uso en contexto
-5. Si tiene forma vesre, mencionala
+Include:
+1. The word/expression
+2. Its meaning in standard Spanish and in English
+3. Etymology in English (many come from Italian, cocoliche, vesre, etc.)
+4. 2-3 examples of usage in context — each example should have the Spanish phrase AND its English translation
+5. If it has a vesre form, mention it
 
-Respondé en formato JSON:
+Respond in JSON:
 {
-  "word": "la palabra",
-  "meaning_es": "significado en español",
+  "word": "the lunfardo word",
+  "meaning_es": "meaning in standard Spanish",
   "meaning_en": "meaning in English",
-  "etymology": "origen de la palabra",
-  "examples": ["ejemplo 1", "ejemplo 2"],
-  "vesre": "forma vesre si existe o null",
+  "etymology": "origin of the word (in English)",
+  "examples": ["Spanish example — English translation", "Spanish example — English translation"],
+  "vesre": "vesre form if it exists, or null",
   "category": "comida|trabajo|personas|emociones|dinero|otro"
 }`,
     description: 'Generates the daily lunfardo word for #lunfardo-del-dia',
