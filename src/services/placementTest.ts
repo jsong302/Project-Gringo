@@ -107,6 +107,10 @@ export interface AnswerResult {
   /** Where they'd start if skipping ahead (only set when hasGaps is true) */
   skipAheadUnit: number;
   skipAheadLevel: number;
+  /** Total correct answers (set when testComplete) */
+  totalCorrect: number;
+  /** Total questions answered (set when testComplete) */
+  totalQuestions: number;
 }
 
 /**
@@ -127,6 +131,9 @@ export function processAnswer(slackUserId: string, selectedIndex: number): Answe
     state.completed = true;
     const placement = calculatePlacement(state);
 
+    const totalCorrect = state.answers.filter((a) => a.correct).length;
+    const totalQuestions = state.answers.length;
+
     if (placement.hasGaps) {
       // Don't finalize yet — user needs to choose between filling gaps or skipping ahead
       ptLog.info(`Placement has gaps for ${slackUserId}: failed levels [${placement.failedLevels}], gap→unit ${placement.gapUnit} vs skip→unit ${placement.skipUnit}`);
@@ -141,6 +148,8 @@ export function processAnswer(slackUserId: string, selectedIndex: number): Answe
         failedLevels: placement.failedLevels,
         skipAheadUnit: placement.skipUnit,
         skipAheadLevel: placement.skipLevel,
+        totalCorrect,
+        totalQuestions,
       };
     }
 
@@ -161,6 +170,8 @@ export function processAnswer(slackUserId: string, selectedIndex: number): Answe
       failedLevels: [],
       skipAheadUnit: 0,
       skipAheadLevel: 0,
+      totalCorrect,
+      totalQuestions,
     };
   }
 
@@ -174,6 +185,8 @@ export function processAnswer(slackUserId: string, selectedIndex: number): Answe
     failedLevels: [],
     skipAheadUnit: 0,
     skipAheadLevel: 0,
+    totalCorrect: 0,
+    totalQuestions: 0,
   };
 }
 

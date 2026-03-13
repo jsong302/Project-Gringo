@@ -231,11 +231,7 @@ export function registerOnboardingHandlers(app: App): void {
         await postMessage(client, channelId, `${emoji} ${result.correct ? 'Correct!' : 'Not quite.'}`);
 
         if (result.testComplete) {
-          const state = getActiveTest(slackUserId);
-          const totalCorrect = state
-            ? state.answers.filter((a) => a.correct).length
-            : 0;
-          const totalQuestions = state?.answers.length ?? 0;
+          const { totalCorrect, totalQuestions } = result;
 
           if (result.hasGaps) {
             // Gaps detected — show review and let user choose
