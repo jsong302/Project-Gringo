@@ -300,10 +300,13 @@ export function registerMessageHandlers(app: App): void {
         }
 
         msgLog.debug(`Replied to ${slackUserId} in ${channelId}`);
-      } catch (err) {
+      } catch (err: any) {
         msgLog.error(`Message handler failed: ${err}`);
+        const userMessage = err?.userMessage
+          ?? (err?.code === 'ERR_STT_FAILED' ? err.message : null)
+          ?? 'Something went wrong. Please try again in a moment.';
         await say({
-          text: 'Something went wrong. Please try again in a moment.',
+          text: userMessage,
           thread_ts: replyTs,
         });
       }
