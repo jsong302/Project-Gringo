@@ -406,7 +406,7 @@ export function registerMessageHandlers(app: App): void {
         msgLog.error(`Message handler failed: ${err}`);
         const userMessage = err?.userMessage
           ?? (err?.code === 'ERR_STT_FAILED' ? err.message : null)
-          ?? 'Something went wrong. Please try again in a moment.';
+          ?? 'Something went wrong. Please try again in a moment. If this keeps happening, contact Joshua Song.';
         await say({
           text: userMessage,
           thread_ts: replyTs,

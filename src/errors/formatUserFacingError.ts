@@ -18,9 +18,14 @@ const USER_MESSAGES: Record<GringoErrorCode, string> = {
   ERR_SESSION_CONFLICT: 'You already have an active session. Finish it first.',
 };
 
+const CONTACT_SUFFIX = ' If this keeps happening, contact Joshua Song.';
+
 export function formatUserFacingError(err: unknown): string {
+  let msg: string;
   if (err instanceof GringoError) {
-    return err.userMessage ?? USER_MESSAGES[err.code] ?? USER_MESSAGES.ERR_UNKNOWN;
+    msg = err.userMessage ?? USER_MESSAGES[err.code] ?? USER_MESSAGES.ERR_UNKNOWN;
+  } else {
+    msg = USER_MESSAGES.ERR_UNKNOWN;
   }
-  return USER_MESSAGES.ERR_UNKNOWN;
+  return msg + CONTACT_SUFFIX;
 }
