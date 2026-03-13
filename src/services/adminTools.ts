@@ -825,17 +825,23 @@ register('view_lesson_bank', () => {
   }));
   const total = curriculum.length;
   const generated = status.filter(s => s.hasLesson).length;
-  return JSON.stringify({ total, generated, missing: total - generated, units: status }, null, 2);
+  const { isBankGenerationRunning } = require('./curriculumDelivery');
+  return JSON.stringify({ total, generated, missing: total - generated, generating: isBankGenerationRunning(), units: status }, null, 2);
 });
 
 register('generate_lesson_bank', () => {
-  // Fire-and-forget — generation runs in the background since it takes minutes
-  import('./curriculumDelivery').then(({ generateAllBankLessons }) => {
-    generateAllBankLessons().then((result) => {
-      toolLog.info(`Lesson bank generation complete: ${JSON.stringify(result)}`);
-    }).catch((err) => {
-      toolLog.error(`Lesson bank generation failed: ${err}`);
+  const { isBankGenerationRunning, generateAllBankLessons } = require('./curriculumDelivery');
+  if (isBankGenerationRunning()) {
+    return JSON.stringify({
+      success: false,
+      message: 'Lesson bank generation is already running. Use view_lesson_bank to check progress.',
     });
+  }
+  // Fire-and-forget — generation runs in the background since it takes minutes
+  generateAllBankLessons().then((result: any) => {
+    toolLog.info(`Lesson bank generation complete: ${JSON.stringify(result)}`);
+  }).catch((err: any) => {
+    toolLog.error(`Lesson bank generation failed: ${err}`);
   });
   return JSON.stringify({
     success: true,

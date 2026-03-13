@@ -425,33 +425,49 @@ export async function generateAndBankLesson(unitId: number): Promise<string> {
   return response.text;
 }
 
+// In-memory lock to prevent concurrent bank generation
+let bankGenerationRunning = false;
+
+export function isBankGenerationRunning(): boolean {
+  return bankGenerationRunning;
+}
+
 /**
  * Generate lessons for all units that don't have one in the bank yet.
- * Returns count of newly generated lessons.
+ * Returns count of newly generated lessons. Only one run at a time.
  */
 export async function generateAllBankLessons(): Promise<{ generated: number; skipped: number; errors: number }> {
-  const units = getCurriculum();
-  let generated = 0;
-  let skipped = 0;
-  let errors = 0;
-
-  for (const unit of units) {
-    const existing = getLessonFromBank(unit.id);
-    if (existing) {
-      skipped++;
-      continue;
-    }
-    try {
-      await generateAndBankLesson(unit.id);
-      generated++;
-      delLog.info(`Generated bank lesson for Unit ${unit.unitOrder}: ${unit.title}`);
-    } catch (err) {
-      errors++;
-      delLog.error(`Failed to generate bank lesson for Unit ${unit.unitOrder}: ${err}`);
-    }
+  if (bankGenerationRunning) {
+    return { generated: 0, skipped: 0, errors: 0 };
   }
 
-  return { generated, skipped, errors };
+  bankGenerationRunning = true;
+  try {
+    const units = getCurriculum();
+    let generated = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    for (const unit of units) {
+      const existing = getLessonFromBank(unit.id);
+      if (existing) {
+        skipped++;
+        continue;
+      }
+      try {
+        await generateAndBankLesson(unit.id);
+        generated++;
+        delLog.info(`Generated bank lesson for Unit ${unit.unitOrder}: ${unit.title}`);
+      } catch (err) {
+        errors++;
+        delLog.error(`Failed to generate bank lesson for Unit ${unit.unitOrder}: ${err}`);
+      }
+    }
+
+    return { generated, skipped, errors };
+  } finally {
+    bankGenerationRunning = false;
+  }
 }
 
 // ── Per-user exercise cache ─────────────────────────────────
