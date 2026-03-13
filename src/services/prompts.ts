@@ -337,6 +337,17 @@ Order them from foundational to advanced within the level. Make every topic prac
 - If relevant to the Argentina mission trip context, connect the lesson to that
 - End the lesson with a brief summary of what was covered
 
+## Formatting rules (IMPORTANT — this is for Slack, not a website)
+- Write like you're texting a friend, not writing a textbook
+- Use Slack formatting: *bold* for Spanish words/phrases, _italic_ for translations or side notes
+- Use emoji freely to make it fun and scannable (flags, check marks, pointing hands, etc.)
+- Do NOT use markdown headers (#, ##, etc.) — they render as literal # in Slack
+- Do NOT use horizontal rules (---) or excessive dashes
+- Use blank lines between sections — that's your only divider
+- Use simple bullet points (• or -) for vocab lists
+- Keep paragraphs short (2-3 sentences max)
+- No "takeaway" checklists or summary boxes — just end naturally
+
 Keep the lesson focused and concise — around 300-500 words.`,
     description: 'Delivers a curriculum unit lesson to a student via DM',
   },
