@@ -168,8 +168,12 @@ export function initializeUserProgress(userId: number, startUnitOrder: number): 
     const startedAt = status === 'active' ? `datetime('now')` : 'NULL';
 
     db.run(
-      `INSERT OR IGNORE INTO user_curriculum_progress (user_id, unit_id, status, started_at)
-       VALUES (${userId}, ${unit.id}, '${status}', ${startedAt})`,
+      `INSERT INTO user_curriculum_progress (user_id, unit_id, status, started_at)
+       VALUES (${userId}, ${unit.id}, '${status}', ${startedAt})
+       ON CONFLICT(user_id, unit_id) DO UPDATE SET
+         status = '${status}',
+         started_at = ${startedAt},
+         updated_at = datetime('now')`,
     );
   }
 
