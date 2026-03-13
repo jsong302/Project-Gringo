@@ -166,8 +166,9 @@ export function buildChannelGuideBlocks(): Record<string, unknown>[] {
         text: [
           '`#daily-lesson` — Monday to Friday at 9am, a new lesson.',
           '`#lunfardo-del-dia` — Every day at noon, a new lunfardo (slang) word.',
-          '`#repaso` — Spaced repetition flashcards (SRS) to memorize vocabulary.',
           '`#desafios` — Practice with other students.',
+          '',
+          '_Use `/gringo repaso` in our DM to review your SRS flashcards._',
         ].join('\n'),
       },
     },

@@ -30,7 +30,7 @@ export function buildAdminSystemPrompt(adminUserId?: number): string {
 - **DMs**: Free conversation practice. Users send text or voice memos in Spanish, the bot responds as a conversation partner and corrects errors.
 - **#daily-lesson**: Mon-Fri at 9am, an LLM-generated lesson is posted (grammar point + vocabulary + exercise). Difficulty adapts to user levels.
 - **#lunfardo-del-dia**: Daily at noon, a lunfardo (Argentine slang) word with etymology, examples, and a mini exercise.
-- **#repaso**: SRS flashcard reviews using SM-2 spaced repetition. Users see cards and rate their recall (again/hard/good/easy).
+- **SRS Reviews (via DM)**: The /gringo repaso command triggers SM-2 flashcard reviews. Users see cards and rate their recall (again/hard/good/easy).
 - **#desafio**: Challenge mode — dialogue simulations and pair practice.
 
 ## How Learning Works

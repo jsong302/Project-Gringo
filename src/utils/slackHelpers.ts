@@ -60,10 +60,9 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
         text: [
           '`#daily-lesson` — Daily lesson: vocab, grammar, culture, and a voice exercise (Mon-Fri)',
           '`#lunfardo-del-dia` — A new lunfardo (slang) word every day with etymology',
-          '`#repaso` — Spaced repetition review sessions (SRS flashcards)',
           '`#desafios` — Pair practice with dialogue scenarios',
           '',
-          '_DM me anytime for free conversation practice in Argentine Spanish!_',
+          '_DM me anytime for free conversation practice or to run `/gringo repaso` for SRS flashcards!_',
         ].join('\n'),
       },
     },
