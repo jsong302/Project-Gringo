@@ -40,7 +40,7 @@ function buildHomeBlocks(slackUserId: string): Record<string, unknown>[] {
   // ── Header ──────────────────────────────────────────────
   blocks.push({
     type: 'header',
-    text: { type: 'plain_text', text: ':argentina: Gringo — Your Argentine Spanish Tutor' },
+    text: { type: 'plain_text', text: 'Gringo — Your Argentine Spanish Tutor', emoji: true },
   });
 
   // ── Profile ─────────────────────────────────────────────
