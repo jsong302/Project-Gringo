@@ -170,6 +170,47 @@ export function getAllUsersProgress(): Array<{
   });
 }
 
+/**
+ * Get a summary of the user's completed and current units for LLM context.
+ */
+export function getCurriculumContextForLlm(userId: number): string {
+  const db = getDb();
+  const current = getCurrentUnit(userId);
+
+  // Get passed units with titles
+  const passedResult = db.exec(
+    `SELECT cu.unit_order, cu.title, cu.topic
+     FROM user_curriculum_progress ucp
+     JOIN curriculum_units cu ON ucp.unit_id = cu.id
+     WHERE ucp.user_id = ${userId} AND ucp.status = 'passed'
+     ORDER BY cu.unit_order ASC`,
+  );
+
+  const lines: string[] = [];
+
+  if (passedResult.length && passedResult[0].values.length) {
+    const passed = passedResult[0].values
+      .map((r) => `Unit ${r[0]}: ${r[1]} (${r[2]})`)
+      .join(', ');
+    lines.push(`Completed units: ${passed}`);
+  } else {
+    lines.push('Completed units: none yet');
+  }
+
+  if (current) {
+    lines.push(`Current unit: Unit ${current.unit.unitOrder} — ${current.unit.title} (${current.unit.topic}), status: ${current.progress.status}`);
+  }
+
+  const totalCount = getCurriculumCount();
+  const completedResult = db.exec(
+    `SELECT COUNT(*) FROM user_curriculum_progress WHERE user_id = ${userId} AND status = 'passed'`,
+  );
+  const completedCount = completedResult.length ? (completedResult[0].values[0][0] as number) : 0;
+  lines.push(`Progress: ${completedCount}/${totalCount} units completed`);
+
+  return lines.join('\n');
+}
+
 // ── Progress management ─────────────────────────────────────
 
 /**
@@ -341,6 +382,10 @@ export async function generateUnitLesson(unit: CurriculumUnit, userId: number): 
     fullSystem += `\n\n--- Learner Profile ---\n${memoryContext}`;
   }
 
+  // Include curriculum progress so the LLM knows what the student has already learned
+  const curriculumContext = getCurriculumContextForLlm(userId);
+  fullSystem += `\n\n--- Curriculum Progress ---\n${curriculumContext}\n\nBuild on what they've already learned. Reference prior units when relevant, but don't re-teach completed material.`;
+
   const response = await callLlm({
     system: fullSystem,
     messages: [{ role: 'user', content: 'Deliver this lesson to me.' }],
@@ -384,6 +429,10 @@ IMPORTANT: Students are on English keyboards — do NOT ask for accents, tildes,
   if (memoryContext) {
     systemPrompt += `\n\n--- Learner Profile ---\n${memoryContext}`;
   }
+
+  // Include curriculum progress so exercises can reference prior knowledge
+  const exerciseCurrCtx = getCurriculumContextForLlm(userId);
+  systemPrompt += `\n\n--- Curriculum Progress ---\n${exerciseCurrCtx}\n\nYou may reference vocabulary or concepts from completed units. Only test material from the current unit.`;
 
   const response = await callLlm({
     system: systemPrompt,

@@ -222,6 +222,7 @@ export function buildCharlaSystemPrompt(
   displayName?: string,
   isAdminUser?: boolean,
   adminUserId?: number,
+  userId?: number,
 ): string {
   const template = getPromptOrThrow('charla_system');
   let prompt = interpolate(template, { level: String(userLevel) });
@@ -232,6 +233,17 @@ export function buildCharlaSystemPrompt(
 
   if (memoryContext) {
     prompt += `\n\n--- Learner Profile ---\n${memoryContext}\n\nUse this profile to personalize your teaching. Focus on their weaknesses, build on their strengths, and reference their interests when possible.`;
+  }
+
+  // Inject curriculum progress so charla knows what the student has learned
+  if (userId) {
+    try {
+      const { getCurriculumContextForLlm } = require('./curriculumDelivery');
+      const curriculumCtx = getCurriculumContextForLlm(userId);
+      prompt += `\n\n--- Curriculum Progress ---\n${curriculumCtx}\n\nYou are aware of the student's curriculum progress. If they ask about a specific unit, tell them its status (completed, current, or upcoming). If they have an exercise pending, remind them to answer it. If they ask to "show" a unit they haven't reached yet, briefly describe what it covers and tell them to finish their current unit first. Don't re-teach completed material in detail — just reference it.`;
+    } catch {
+      // Curriculum not available — skip
+    }
   }
 
   if (isAdminUser) {
@@ -287,7 +299,7 @@ export async function generateCharlaResponse(
   slackUserId?: string,
 ): Promise<CharlaResponse> {
   const isAdminUser = slackUserId ? isAdmin(slackUserId) : false;
-  const system = buildCharlaSystemPrompt(userLevel, memoryContext, displayName, isAdminUser, userId);
+  const system = buildCharlaSystemPrompt(userLevel, memoryContext, displayName, isAdminUser, userId, userId);
   const tools = getToolsForUser(slackUserId);
 
   const messages: LlmMessage[] = [
