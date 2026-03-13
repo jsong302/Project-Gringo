@@ -36,6 +36,8 @@ import {
   recordAttempt,
   activateNextUnit,
   formatGradeBlocks as formatCurriculumGradeBlocks,
+  trackUnitMessage,
+  clearTrackedMessages,
 } from '../services/curriculumDelivery';
 
 const msgLog = log.withScope('message-handler');
@@ -239,16 +241,42 @@ export function registerMessageHandlers(app: App): void {
 
             if (grade.passed) {
               const { leveledUp, newLevel } = markUnitPassed(user.id, current.unit.id, grade.score);
-              const blocks = formatCurriculumGradeBlocks(grade, current.unit, true);
-              await say({ text: `Passed! Score: ${grade.score}`, blocks: blocks as any });
 
-              if (leveledUp) {
-                await say({ text: `You've leveled up to *Level ${newLevel}*! Keep it up!` });
+              // Delete all tracked lesson/exercise/grading messages to keep DM clean
+              const oldMessages = clearTrackedMessages(user.id);
+              for (const msgTs of oldMessages) {
+                try {
+                  await client.chat.delete({ channel: channelId, ts: msgTs });
+                } catch {
+                  // Message may already be deleted or too old — ignore
+                }
               }
+
+              // Post compact summary instead
+              const summaryText = leveledUp
+                ? `:white_check_mark: *Unit ${current.unit.unitOrder}: ${current.unit.title}* — Passed (${grade.score}/5)\n:arrow_up: *Leveled up to Level ${newLevel}!*`
+                : `:white_check_mark: *Unit ${current.unit.unitOrder}: ${current.unit.title}* — Passed (${grade.score}/5)`;
+
+              const summaryResult = await say({
+                text: summaryText,
+                blocks: [
+                  {
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: summaryText },
+                  },
+                  {
+                    type: 'context',
+                    elements: [{ type: 'mrkdwn', text: '_Use `/gringo next` to continue to the next unit!_' }],
+                  },
+                ] as any,
+              });
+              // Don't track the summary — it stays permanently
+
             } else {
               const attempts = recordAttempt(user.id, current.unit.id, grade.score);
               const blocks = formatCurriculumGradeBlocks(grade, current.unit, false);
-              await say({ text: `Score: ${grade.score}`, blocks: blocks as any });
+              const gradeResult = await say({ text: `Score: ${grade.score}`, blocks: blocks as any });
+              trackUnitMessage(user.id, (gradeResult as any)?.ts);
 
               // Send correction audio based on user preference
               if (grade.correction) {
@@ -268,7 +296,8 @@ export function registerMessageHandlers(app: App): void {
               }
 
               if (attempts >= 3) {
-                await say({ text: "_Hint: Try reviewing the lesson above and focus on the key vocabulary. You've got this!_" });
+                const hintResult = await say({ text: "_Hint: Try reviewing the lesson above and focus on the key vocabulary. You've got this!_" });
+                trackUnitMessage(user.id, (hintResult as any)?.ts);
               }
             }
 

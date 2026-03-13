@@ -17,6 +17,28 @@ import { getUserById, updateLevel } from './userService';
 
 const delLog = log.withScope('curriculum-delivery');
 
+// ── DM message tracker (for cleanup after unit pass) ────────
+
+/** Track bot message timestamps per user so we can delete them after passing */
+const unitMessages = new Map<number, string[]>(); // userId → [ts, ts, ...]
+
+export function trackUnitMessage(userId: number, ts: string | undefined): void {
+  if (!ts) return;
+  const existing = unitMessages.get(userId) ?? [];
+  existing.push(ts);
+  unitMessages.set(userId, existing);
+}
+
+export function getTrackedMessages(userId: number): string[] {
+  return unitMessages.get(userId) ?? [];
+}
+
+export function clearTrackedMessages(userId: number): string[] {
+  const msgs = unitMessages.get(userId) ?? [];
+  unitMessages.delete(userId);
+  return msgs;
+}
+
 // ── Types ───────────────────────────────────────────────────
 
 export interface UserProgress {

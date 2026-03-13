@@ -19,13 +19,14 @@ export async function postMessage(
   text: string,
   blocks?: Record<string, unknown>[],
   threadTs?: string,
-): Promise<void> {
-  await client.chat.postMessage({
+): Promise<string | undefined> {
+  const result = await client.chat.postMessage({
     channel,
     text,
     ...(blocks ? { blocks } : {}),
     ...(threadTs ? { thread_ts: threadTs } : {}),
   });
+  return result.ts;
 }
 
 export function buildHelpBlocks(): Record<string, unknown>[] {
