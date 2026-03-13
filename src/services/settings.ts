@@ -161,8 +161,8 @@ export const DEFAULT_SETTINGS: Array<{ key: string; value: unknown; description:
   { key: 'llm.charla_max_tokens', value: 512, description: 'Max tokens for charla responses' },
 
   // Cron
-  { key: 'cron.daily_lesson', value: '0 9 * * 1-5', description: 'Cron schedule for daily lessons (default: 9am Mon-Fri)' },
-  { key: 'cron.lunfardo_del_dia', value: '0 12 * * *', description: 'Cron schedule for lunfardo del dia (default: noon daily)' },
+  { key: 'cron.daily_lesson', value: '0 13 * * 1-5', description: 'Cron schedule for daily lessons (default: 9am ET / 13:00 UTC Mon-Fri)' },
+  { key: 'cron.lunfardo_del_dia', value: '0 16 * * *', description: 'Cron schedule for lunfardo del dia (default: noon ET / 16:00 UTC daily)' },
 
   // Content gating
   { key: 'content.level_gate', value: true, description: 'Gate seed content by user level (only show level-appropriate cards)' },
