@@ -198,10 +198,13 @@ export function registerMessageHandlers(app: App): void {
           return;
         }
 
-        // Check if there's an active conversation in this thread
-        let conversation = getConversationByThread(channelId, threadTs);
+        // Check if there's an active conversation
+        // In DMs, use a stable key so all messages are one continuous conversation
+        // In channels, use the thread timestamp to keep conversations separate
+        const conversationKey = channelType === 'im' ? 'dm' : threadTs;
+        let conversation = getConversationByThread(channelId, conversationKey);
         if (!conversation) {
-          conversation = startConversation(user.id, channelId, threadTs, 'charla');
+          conversation = startConversation(user.id, channelId, conversationKey, 'charla');
         }
 
         // Load thread history from DB for multi-turn context
