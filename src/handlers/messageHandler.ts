@@ -27,10 +27,42 @@ import { isAdminDm, handleAdminDm } from './adminHandler';
 
 const msgLog = log.withScope('message-handler');
 
+// Cache the bot's own user ID so we can detect @mentions
+let botUserId: string | null = null;
+
+async function getBotUserId(client: any): Promise<string> {
+  if (botUserId) return botUserId;
+  try {
+    const result = await client.auth.test();
+    botUserId = result.user_id ?? '';
+    return botUserId;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Check if the bot should respond to this message.
+ * Returns true for: DMs or @mentions in any channel.
+ */
+async function shouldRespond(
+  text: string,
+  channelType: string,
+  client: any,
+): Promise<boolean> {
+  // Always respond in DMs
+  if (channelType === 'im') return true;
+
+  // In channels, only respond when @mentioned
+  const botId = await getBotUserId(client);
+  if (botId && text.includes(`<@${botId}>`)) return true;
+
+  return false;
+}
+
 // ── Registration ────────────────────────────────────────────
 
 export function registerMessageHandlers(app: App): void {
-  // Listen for messages that mention the bot or are in charla channels
   app.message(async ({ message, client, say }) => {
     // Only handle user messages (not bot messages, not edits)
     if (message.subtype || !('text' in message) || !message.text) return;
@@ -49,6 +81,9 @@ export function registerMessageHandlers(app: App): void {
           await handleAdminDm(slackUserId, text, client, channelId, threadTs);
           return;
         }
+
+        // Only respond in DMs or when @mentioned
+        if (!await shouldRespond(text, channelType, client)) return;
 
         const user = getOrCreateUser(slackUserId);
 
