@@ -344,7 +344,8 @@ export async function generateUnitExercise(unit: CurriculumUnit, userId: number)
 ${prompt}
 
 Present the exercise clearly. The student will respond and their answer will be graded.
-Keep the exercise focused and achievable. For Level 1-2, keep it simple (1 exercise). For Level 3+, you can include 2-3 parts.`;
+Keep the exercise focused and achievable. For Level 1-2, keep it simple (1 exercise). For Level 3+, you can include 2-3 parts.
+IMPORTANT: Students are on English keyboards — do NOT ask for accents, tildes, ¿, ¡, ñ, or "proper Spanish punctuation". Accept plain text answers.`;
 
   if (user?.displayName) {
     systemPrompt += `\n\nThe student's name is ${user.displayName}.`;

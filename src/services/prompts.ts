@@ -336,6 +336,7 @@ Order them from foundational to advanced within the level. Make every topic prac
 - Include 2-3 example sentences showing the concept in use
 - If relevant to the Argentina mission trip context, connect the lesson to that
 - End the lesson with a brief summary of what was covered
+- Students are on English keyboards — NEVER ask them to type accents, tildes, ¿, ¡, or ñ. Don't mention "proper punctuation" or "inverted question marks" in exercises. Accept plain ASCII.
 
 ## Formatting rules (IMPORTANT — this is for Slack, not a website)
 - Write like you're texting a friend, not writing a textbook
@@ -361,7 +362,7 @@ Keep the lesson focused and concise — around 300-500 words.`,
 
 ## Grading Rules by Level
 
-**All levels**: Ignore missing accents/tildes, capitalization, and punctuation. Focus on whether the student communicated the meaning correctly.
+**All levels**: Students are typing on English keyboards without Spanish characters. ALWAYS ignore: missing accents/tildes (e.g., "como" = "cómo"), missing ¿ or ¡, missing ñ (e.g., "ano" = "año"), capitalization, and punctuation. NEVER mark someone down or mention these in feedback. Focus only on whether the student communicated the meaning correctly.
 
 **Level 1-2**: Grade generously. Accept both tú and vos verb forms. Give partial credit for close attempts. If they got the general idea right but grammar is imperfect, that's a 3-4. Perfect = 5, total nonsense = 0-1.
 
