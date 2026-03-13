@@ -828,10 +828,19 @@ register('view_lesson_bank', () => {
   return JSON.stringify({ total, generated, missing: total - generated, units: status }, null, 2);
 });
 
-register('generate_lesson_bank', async () => {
-  const { generateAllBankLessons } = await import('./curriculumDelivery');
-  const result = await generateAllBankLessons();
-  return JSON.stringify({ success: true, ...result });
+register('generate_lesson_bank', () => {
+  // Fire-and-forget — generation runs in the background since it takes minutes
+  import('./curriculumDelivery').then(({ generateAllBankLessons }) => {
+    generateAllBankLessons().then((result) => {
+      toolLog.info(`Lesson bank generation complete: ${JSON.stringify(result)}`);
+    }).catch((err) => {
+      toolLog.error(`Lesson bank generation failed: ${err}`);
+    });
+  });
+  return JSON.stringify({
+    success: true,
+    message: 'Lesson bank generation started in the background. Use view_lesson_bank to check status.',
+  });
 });
 
 register('regenerate_lesson', async (input) => {
