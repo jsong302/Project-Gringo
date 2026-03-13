@@ -29,6 +29,10 @@ import { generatePlan } from '../services/lessonPlan';
 
 const onboardLog = log.withScope('onboarding');
 
+// Track users who've already been sent a welcome DM to prevent duplicates
+// (e.g. user joins multiple channels before completing onboarding)
+const welcomeSent = new Set<string>();
+
 // ── Slack profile lookup ────────────────────────────────────
 
 /**
@@ -116,10 +120,11 @@ export function registerOnboardingHandlers(app: App): void {
 
     try {
       const user = getOrCreateUser(slackUserId);
-      if (user.onboarded) {
-        onboardLog.debug(`User ${slackUserId} already onboarded, skipping`);
+      if (user.onboarded || welcomeSent.has(slackUserId)) {
+        onboardLog.debug(`User ${slackUserId} already onboarded or DM sent, skipping`);
         return;
       }
+      welcomeSent.add(slackUserId);
       await sendWelcomeDm(client, slackUserId);
     } catch (err) {
       onboardLog.error(`Failed to onboard ${slackUserId}: ${err}`);
@@ -133,9 +138,10 @@ export function registerOnboardingHandlers(app: App): void {
 
     try {
       const user = getOrCreateUser(slackUserId);
-      if (user.onboarded) return;
+      if (user.onboarded || welcomeSent.has(slackUserId)) return;
 
       onboardLog.info(`User ${slackUserId} joined channel — sending onboarding DM`);
+      welcomeSent.add(slackUserId);
       await sendWelcomeDm(client, slackUserId);
     } catch (err) {
       onboardLog.error(`Channel-join onboard failed for ${slackUserId}: ${err}`);
@@ -156,6 +162,7 @@ export function registerOnboardingHandlers(app: App): void {
         const user = getOrCreateUser(slackUserId);
         updateLevel(user.id, level);
         markOnboarded(user.id);
+        welcomeSent.delete(slackUserId);
 
         // Generate personalized lesson plan in the background
         generatePlan(user.id, level).catch((err) => {
