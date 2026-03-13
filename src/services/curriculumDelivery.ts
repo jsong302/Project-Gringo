@@ -35,6 +35,7 @@ export interface GradeResult {
   passed: boolean;
   feedback: string;
   errors: string[];
+  correction: string;
 }
 
 // ── Row mapper ──────────────────────────────────────────────
@@ -401,6 +402,7 @@ export async function gradeExerciseResponse(
       passed: parsed.passed ?? (parsed.score >= unit.passThreshold),
       feedback: parsed.feedback ?? 'No feedback provided.',
       errors: Array.isArray(parsed.errors) ? parsed.errors : [],
+      correction: typeof parsed.correction === 'string' ? parsed.correction : '',
     };
   } catch {
     delLog.warn('Failed to parse grading response, defaulting to score 3');
@@ -409,6 +411,7 @@ export async function gradeExerciseResponse(
       passed: 3 >= unit.passThreshold,
       feedback: response.text.slice(0, 500),
       errors: [],
+      correction: '',
     };
   }
 }
@@ -474,6 +477,17 @@ export function formatGradeBlocks(result: GradeResult, unit: CurriculumUnit, pas
     blocks.push({
       type: 'section',
       text: { type: 'mrkdwn', text: `*Errors to work on:*\n${result.errors.map((e) => `• ${e}`).join('\n')}` },
+    });
+  }
+
+  if (!passed && result.correction) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Correct answer:* _${result.correction}_` },
+    });
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: ':speaker: _Listen to the audio below to hear how it sounds._' }],
     });
   }
 

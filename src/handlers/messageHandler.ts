@@ -236,6 +236,14 @@ export function registerMessageHandlers(app: App): void {
               const blocks = formatCurriculumGradeBlocks(grade, current.unit, false);
               await say({ text: `Score: ${grade.score}`, blocks: blocks as any });
 
+              // Send pronunciation audio of the correct answer
+              if (grade.correction) {
+                const audioBuffers = await generatePronunciationAudio([grade.correction]);
+                if (audioBuffers[0]) {
+                  await uploadAudioToSlack(client, channelId, audioBuffers[0], grade.correction);
+                }
+              }
+
               if (attempts >= 3) {
                 await say({ text: "_Hint: Try reviewing the lesson above and focus on the key vocabulary. You've got this!_" });
               }
