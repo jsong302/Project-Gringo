@@ -472,7 +472,7 @@ export async function gradeExerciseResponse(
     system: systemPrompt,
     messages: [{
       role: 'user',
-      content: `Exercise given:\n${exerciseText}\n\nStudent's response${inputMode === 'voice' ? ' (spoken via voice memo, transcribed below)' : ''}:\n${studentResponse}\n\nGrade this response. Return JSON: {"isAttempt": boolean, "score": 0-5, "passed": boolean, "feedback": "string", "errors": ["string"]}\n\nIMPORTANT: If the student's response is NOT an exercise attempt (e.g. they're asking a question, requesting help, navigating, or chatting), set "isAttempt": false and score: 0. Only grade actual translation/answer attempts.`,
+      content: `Exercise given:\n${exerciseText}\n\nStudent's response${inputMode === 'voice' ? ' (spoken via voice memo, transcribed below)' : ''}:\n${studentResponse}\n\nGrade this response. Return JSON: {"isAttempt": boolean, "score": 0-5, "passed": boolean, "feedback": "string", "errors": ["string"]}\n\nIMPORTANT about "isAttempt": Set false ONLY if the response is clearly in English and is a question, navigation request, or chat (e.g. "show unit 1", "help me", "go back"). If the response contains ANY Spanish words or phrases, it IS an exercise attempt — set "isAttempt": true and grade it normally, even if it's incomplete or only partially answers the exercise.`,
     }],
     temperature: 0.3,
     maxTokens: 512,

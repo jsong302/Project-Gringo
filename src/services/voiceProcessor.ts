@@ -118,12 +118,13 @@ export function formatVoiceResponseBlocks(
     }],
   });
 
-  // Show response
+  // Show response (guard against empty text which Slack rejects)
+  const responseText = result.response.text || 'I heard you! Try again or ask me something.';
   blocks.push({
     type: 'section',
     text: {
       type: 'mrkdwn',
-      text: result.response.text,
+      text: responseText,
     },
   });
 
