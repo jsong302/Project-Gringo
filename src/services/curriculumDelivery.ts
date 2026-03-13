@@ -469,7 +469,7 @@ export function formatGradeBlocks(result: GradeResult, unit: CurriculumUnit, pas
   const blocks: any[] = [
     {
       type: 'section',
-      text: { type: 'mrkdwn', text: `${emoji} *${status}* (Score: ${result.score}/${unit.passThreshold} needed)` },
+      text: { type: 'mrkdwn', text: `${emoji} *${status}* (Score: ${result.score}/5 — need ${unit.passThreshold}+ to pass)` },
     },
     {
       type: 'section',
