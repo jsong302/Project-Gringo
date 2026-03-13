@@ -367,7 +367,16 @@ ${prompt}
 
 Present the exercise clearly. The student will respond and their answer will be graded.
 Keep the exercise focused and achievable. For Level 1-2, keep it simple (1 exercise). For Level 3+, you can include 2-3 parts.
-IMPORTANT: Students are on English keyboards — do NOT ask for accents, tildes, ¿, ¡, ñ, or "proper Spanish punctuation". Accept plain text answers.`;
+IMPORTANT: Students are on English keyboards — do NOT ask for accents, tildes, ¿, ¡, ñ, or "proper Spanish punctuation". Accept plain text answers.
+
+## Formatting rules (IMPORTANT — this is for Slack, not a website)
+- Use Slack formatting: *bold* for emphasis, _italic_ for side notes
+- Do NOT use markdown headers (#, ##, etc.) — they render as literal # in Slack
+- Do NOT use horizontal rules (---) or excessive dashes
+- Do NOT include a title or heading — the exercise is already labeled in the UI
+- Do NOT mention the student's level number — just give the exercise
+- Keep it conversational and short — just the instructions and the questions
+- Number the questions simply (1. 2. 3.) without bold on the numbers`;
 
   if (user?.displayName) {
     systemPrompt += `\n\nThe student's name is ${user.displayName}.`;

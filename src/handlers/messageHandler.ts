@@ -216,9 +216,16 @@ export function registerMessageHandlers(app: App): void {
 
         // ── Curriculum exercise grading ──────────────────────
         // If user has a unit in "practicing" status in DM, grade their response
+        // But first check if the message is a navigation/help request, not an exercise attempt
+        const NON_EXERCISE_PATTERNS = /^(show|help|hint|what|can you|tell me|explain|go back|skip|repeat|review|start over|next unit|previous|menu)/i;
         if (channelType === 'im' && (text || audioFile)) {
           const current = getCurrentUnit(user.id);
           if (current && current.progress.status === 'practicing') {
+            // If text matches a navigation/question pattern (not voice), let it fall through to charla
+            if (text && !audioFile && NON_EXERCISE_PATTERNS.test(text.trim())) {
+              msgLog.info(`Non-exercise message detected during practicing: "${text.slice(0, 60)}"`);
+              // Fall through to charla conversation handler below
+            } else {
             // Transcribe voice memo if needed
             let responseText = text;
             if (audioFile && !text) {
@@ -303,6 +310,7 @@ export function registerMessageHandlers(app: App): void {
 
             updateStreak(user.id);
             return;
+            } // end else (exercise attempt, not navigation)
           }
         }
 
