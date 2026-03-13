@@ -1069,7 +1069,7 @@ export function registerHomeHandler(app: App): void {
       const card = getCardById(cardId);
       if (card) {
         const result = sm2(card.easeFactor, card.intervalDays, card.repetitions, quality);
-        updateCardAfterReview(cardId, result.easeFactor, result.interval, result.repetitions);
+        updateCardAfterReview(cardId, result);
         logReview(user.id, cardId, quality, 'button');
       }
 
