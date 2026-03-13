@@ -107,13 +107,15 @@ Use voseo (vos hablas, vos tenes) and Argentine vocabulary. Include lunfardo whe
 
 {{previous_lessons}}
 
+IMPORTANT: Write ALL explanations, titles, meanings, exercises, and cultural notes in ENGLISH. Spanish should only appear in vocabulary words, example sentences, and the speaking exercise prompt itself. The students are English speakers learning Spanish.
+
 Respond in JSON:
 {
-  "title": "lesson title",
-  "grammar_topic": "topic explanation",
-  "vocabulary": [{"word": "...", "meaning": "...", "example": "..."}],
-  "exercise": "speaking exercise instruction",
-  "cultural_note": "cultural tip",
+  "title": "lesson title IN ENGLISH",
+  "grammar_topic": "topic explanation IN ENGLISH with Spanish examples",
+  "vocabulary": [{"word": "Spanish word", "meaning": "English meaning", "example": "Spanish example sentence — English translation"}],
+  "exercise": "speaking exercise instruction IN ENGLISH, with the Spanish phrase they should say",
+  "cultural_note": "cultural tip IN ENGLISH",
   "difficulty": {{level}}
 }`,
     description: 'Generates a daily lesson — mission trip focused with speaking exercises',

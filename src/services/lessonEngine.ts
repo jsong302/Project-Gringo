@@ -61,7 +61,7 @@ export function formatDailyLessonBlocks(lesson: DailyLesson): any[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Tema:*\n${lesson.grammar_topic}`,
+        text: `*Topic:*\n${lesson.grammar_topic}`,
       },
     },
     { type: 'divider' },
@@ -69,7 +69,7 @@ export function formatDailyLessonBlocks(lesson: DailyLesson): any[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Vocabulario:*\n${vocabLines}`,
+        text: `*Vocabulary:*\n${vocabLines}`,
       },
     },
     { type: 'divider' },
@@ -77,7 +77,7 @@ export function formatDailyLessonBlocks(lesson: DailyLesson): any[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*🎙️ Ejercicio:*\n${lesson.exercise}\n\n_Respondé con un audio en el hilo._`,
+        text: `*🎙️ Speaking Exercise:*\n${lesson.exercise}\n\n_Reply in the thread with a voice memo!_`,
       },
     },
     { type: 'divider' },
@@ -86,7 +86,7 @@ export function formatDailyLessonBlocks(lesson: DailyLesson): any[] {
       elements: [
         {
           type: 'mrkdwn',
-          text: `🇦🇷 *Dato cultural:* ${lesson.cultural_note}`,
+          text: `🇦🇷 *Cultural Note:* ${lesson.cultural_note}`,
         },
       ],
     },
@@ -95,7 +95,7 @@ export function formatDailyLessonBlocks(lesson: DailyLesson): any[] {
       elements: [
         {
           type: 'mrkdwn',
-          text: `Nivel: ${'⭐'.repeat(lesson.difficulty)}`,
+          text: `Level: ${'⭐'.repeat(lesson.difficulty)}`,
         },
       ],
     },
@@ -114,7 +114,7 @@ export function formatLunfardoBlocks(post: LunfardoPost): any[] {
       type: 'header',
       text: {
         type: 'plain_text',
-        text: `🗣️ Lunfardo del día: ${post.word}`,
+        text: `🗣️ Slang of the Day: ${post.word}`,
         emoji: true,
       },
     },
@@ -123,14 +123,14 @@ export function formatLunfardoBlocks(post: LunfardoPost): any[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*En español:* ${post.meaning_es}\n*In English:* ${post.meaning_en}${vesreLine}`,
+        text: `*In Spanish:* ${post.meaning_es}\n*In English:* ${post.meaning_en}${vesreLine}`,
       },
     },
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Etimología:* ${post.etymology}`,
+        text: `*Etymology:* ${post.etymology}`,
       },
     },
     { type: 'divider' },
@@ -138,7 +138,7 @@ export function formatLunfardoBlocks(post: LunfardoPost): any[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Ejemplos:*\n${exampleLines}`,
+        text: `*Examples:*\n${exampleLines}`,
       },
     },
     {
@@ -146,7 +146,7 @@ export function formatLunfardoBlocks(post: LunfardoPost): any[] {
       elements: [
         {
           type: 'mrkdwn',
-          text: `Categoría: *${post.category}*`,
+          text: `Category: *${post.category}*`,
         },
       ],
     },
