@@ -87,50 +87,6 @@ export function updateLevel(userId: number, newLevel: number): void {
 
 // ── XP ──────────────────────────────────────────────────────
 
-/**
- * XP thresholds per level. Reaching the threshold levels up automatically.
- * Hardcoded defaults — at runtime, prefer getXpThresholds() from settings.
- */
-export const XP_THRESHOLDS: Record<number, number> = {
-  1: 100,
-  2: 300,
-  3: 600,
-  4: 1000,
-  5: Infinity, // Max level
-};
-
-/**
- * Get XP thresholds from settings if available, otherwise use hardcoded defaults.
- */
-function getActiveThresholds(): Record<number, number> {
-  try {
-    const { getXpThresholds } = require('./settings');
-    return getXpThresholds();
-  } catch {
-    return XP_THRESHOLDS;
-  }
-}
-
-export function addXp(userId: number, amount: number): { newXp: number; leveledUp: boolean } {
-  const user = getUserById(userId);
-  if (!user) throw new Error(`User ${userId} not found`);
-
-  const newXp = user.xp + amount;
-  const db = getDb();
-  db.run(`UPDATE users SET xp = ${newXp}, updated_at = datetime('now') WHERE id = ${userId}`);
-
-  // Check level up
-  const thresholds = getActiveThresholds();
-  const threshold = thresholds[user.level] ?? Infinity;
-  if (newXp >= threshold && user.level < 5) {
-    const newLevel = user.level + 1;
-    db.run(`UPDATE users SET level = ${newLevel} WHERE id = ${userId}`);
-    userLog.info(`User ${userId} leveled up! ${user.level} → ${newLevel} (${newXp} XP)`);
-    return { newXp, leveledUp: true };
-  }
-
-  return { newXp, leveledUp: false };
-}
 
 // ── Streak ──────────────────────────────────────────────────
 

@@ -10,7 +10,7 @@ import type { App } from '@slack/bolt';
 import { log } from '../utils/logger';
 import { runWithObservabilityContext } from '../observability/context';
 import { getOrCreateUser } from '../services/userService';
-import { updateStreak, addXp } from '../services/userService';
+import { updateStreak } from '../services/userService';
 import {
   startConversation,
   getConversationByThread,
@@ -24,7 +24,7 @@ import { getMemoryForPrompt, generateMemory, getMemory } from '../services/userM
 import { getLessonByMessageTs, gradeLessonResponse, formatGradingBlocks, logLessonEngagement } from '../services/lessonEngine';
 import type { LlmMessage } from '../services/llm';
 import { postMessage } from '../utils/slackHelpers';
-import { getXpForTextMessage, getXpForVoiceMemo, getSetting } from '../services/settings';
+import { getSetting } from '../services/settings';
 import { sendWelcomeDm } from './onboardingHandler';
 import { generatePronunciationAudio } from '../services/pronunciation';
 import { uploadAudioToSlack } from '../utils/slackAudio';
@@ -164,7 +164,6 @@ export function registerMessageHandlers(app: App): void {
               const blocks = formatGradingBlocks(grading);
 
               updateStreak(user.id);
-              addXp(user.id, getXpForTextMessage());
 
               await postMessage(client, channelId, grading.responseEs || grading.praise, blocks as any[], threadTs);
               msgLog.info(`Graded lesson response from ${slackUserId}: ${grading.correct} (${grading.score}/5)`);
@@ -234,7 +233,6 @@ export function registerMessageHandlers(app: App): void {
 
           addTurn(conversation.id);
           updateStreak(user.id);
-          const voiceXpResult = addXp(user.id, getXpForVoiceMemo());
 
           // Save messages to DB for thread continuity
           saveMessage(conversation.id, 'user', result.transcript.transcript);
@@ -253,12 +251,6 @@ export function registerMessageHandlers(app: App): void {
           // Upload pronunciation demo clips if the LLM generated any
           await uploadPronunciationClips(result.response, client, channelId, replyTs);
 
-          // Celebrate level-up
-          if (voiceXpResult.leveledUp) {
-            const updatedUser = getOrCreateUser(slackUserId);
-            await postMessage(client, channelId, `🎉 *Level up!* You're now level ${updatedUser.level}. Keep it up!`, undefined, replyTs);
-          }
-
           msgLog.info(`Voice memo processed for ${slackUserId}`);
           return;
         }
@@ -269,7 +261,6 @@ export function registerMessageHandlers(app: App): void {
 
         addTurn(conversation.id);
         updateStreak(user.id);
-        const textXpResult = addXp(user.id, getXpForTextMessage());
 
         // Save messages to DB for thread continuity
         saveMessage(conversation.id, 'user', text);
@@ -283,20 +274,11 @@ export function registerMessageHandlers(app: App): void {
         // Upload pronunciation demo clips if the LLM generated any
         await uploadPronunciationClips(response, client, channelId, replyTs);
 
-        // Celebrate level-up
-        if (textXpResult.leveledUp) {
-          const updatedUser = getOrCreateUser(slackUserId);
-          await say({
-            text: `🎉 *Level up!* You're now level ${updatedUser.level}. Keep it up!`,
-            thread_ts: replyTs,
-          });
-        }
-
-        // Regenerate memory profile periodically
+        // Regenerate memory profile periodically based on conversation turns
         const memoryRegenInterval = getSetting('memory.regenerate_after_interactions', 20);
         const currentMemory = getMemory(user.id);
-        const interactionsSinceMemory = user.xp - (currentMemory?.interactionCountAtGeneration ?? 0);
-        if (!currentMemory || interactionsSinceMemory >= memoryRegenInterval) {
+        const turnsSinceMemory = conversation.turnCount - (currentMemory?.interactionCountAtGeneration ?? 0);
+        if (!currentMemory || turnsSinceMemory >= memoryRegenInterval) {
           generateMemory(user.id).catch((err) => {
             msgLog.error(`Memory generation failed: ${err}`);
           });

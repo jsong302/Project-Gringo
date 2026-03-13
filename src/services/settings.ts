@@ -139,13 +139,6 @@ export function seedDefaultSettings(): void {
 // ── Default settings ────────────────────────────────────────
 
 export const DEFAULT_SETTINGS: Array<{ key: string; value: unknown; description: string }> = [
-  // XP
-  { key: 'xp.text_message', value: 5, description: 'XP earned per text message in charla' },
-  { key: 'xp.voice_memo', value: 10, description: 'XP earned per voice memo' },
-  { key: 'xp.review_correct', value: 3, description: 'XP earned per correct SRS review' },
-  { key: 'xp.review_incorrect', value: 1, description: 'XP earned per incorrect SRS review (participation)' },
-  { key: 'xp.thresholds', value: { 1: 100, 2: 300, 3: 600, 4: 1000, 5: Infinity }, description: 'XP needed per level to level up' },
-
   // SRS
   { key: 'srs.default_ease_factor', value: 2.5, description: 'SM-2 default ease factor for new cards' },
   { key: 'srs.first_interval', value: 1, description: 'SM-2 first interval in days' },
@@ -190,18 +183,6 @@ export const DEFAULT_SETTINGS: Array<{ key: string; value: unknown; description:
 ];
 
 // ── Typed getters (convenience) ─────────────────────────────
-
-export function getXpForTextMessage(): number {
-  return getSetting('xp.text_message', 5);
-}
-
-export function getXpForVoiceMemo(): number {
-  return getSetting('xp.voice_memo', 10);
-}
-
-export function getXpThresholds(): Record<number, number> {
-  return getSetting('xp.thresholds', { 1: 100, 2: 300, 3: 600, 4: 1000, 5: Infinity });
-}
 
 export function getMaxCardsPerSession(): number {
   return getSetting('srs.max_cards_per_session', 10);

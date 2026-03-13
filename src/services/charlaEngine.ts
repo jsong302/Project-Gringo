@@ -186,12 +186,12 @@ export function buildCharlaSystemPrompt(
 This user is an admin. In addition to teaching Spanish, you can help them manage the bot.
 
 As an admin, you can:
-- View and change system settings (cron schedules, SRS params, XP thresholds, etc.)
+- View and change system settings (cron schedules, SRS params, etc.)
 - See all users and their progress
 - Analyze error patterns and suggest interventions
 - Edit system prompts that control lessons, grading, and conversation
 - Manage admin access (add/remove admins)
-- Award XP, change user levels
+- Change user levels based on proficiency
 - View SRS health metrics
 
 How to decide what to do:

@@ -18,7 +18,7 @@ import { getUserCardStats } from './srsRepository';
 import { getErrorSummary, getRecentErrors, getTotalErrorCount, logLearningError, type ErrorCategory } from './errorTracker';
 import { getMemory, getMemoryForPrompt } from './userMemory';
 import { listPrompts, upsertPrompt, getPrompt } from './prompts';
-import { addXp, updateStreak } from './userService';
+import { updateStreak } from './userService';
 import type { ToolDefinition } from './llm';
 
 const toolLog = log.withScope('admin-tools');
@@ -217,18 +217,6 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
         user_id: { type: 'number', description: 'Internal user ID' },
       },
       required: ['user_id'],
-    },
-  },
-  {
-    name: 'award_xp',
-    description: 'Award XP to the admin for practicing Spanish in the conversation.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        user_id: { type: 'number', description: 'Internal user ID' },
-        amount: { type: 'number', description: 'XP amount to award' },
-      },
-      required: ['user_id', 'amount'],
     },
   },
   {
@@ -640,21 +628,3 @@ register('analyze_error_patterns', () => {
   }, null, 2);
 });
 
-register('award_xp', (input) => {
-  const userId = input.user_id as number;
-  const amount = input.amount as number;
-
-  const user = getUserById(userId);
-  if (!user) return JSON.stringify({ error: `User not found: ${userId}` });
-
-  addXp(userId, amount);
-  updateStreak(userId);
-
-  const updated = getUserById(userId);
-  return JSON.stringify({
-    success: true,
-    previousXp: user.xp,
-    newXp: updated!.xp,
-    level: updated!.level,
-  });
-});

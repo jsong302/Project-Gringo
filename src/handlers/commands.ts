@@ -13,7 +13,6 @@ import {
   getOrCreateUser,
   updateLevel,
   updateTimezone,
-  XP_THRESHOLDS,
   getNotificationPrefs,
   setNotificationPrefs,
   type NotificationPrefs,
@@ -78,9 +77,7 @@ export function registerCommands(app: App): void {
               updateLevel(user.id, newLevel);
               await respondEphemeral(respond, `Level updated to *${newLevel}*. Lessons and reviews will adapt.`);
             } else {
-              const threshold = XP_THRESHOLDS[user.level] ?? Infinity;
-              const progress = threshold === Infinity ? 'max' : `${user.xp}/${threshold} XP`;
-              await respondEphemeral(respond, `Your level: *${user.level}/5* (${progress})\nUse \`/gringo level <1-5>\` to change it.`);
+              await respondEphemeral(respond, `Your level: *${user.level}/5*\nUse \`/gringo level <1-5>\` to change it.`);
             }
             break;
           }
@@ -105,7 +102,6 @@ export function registerCommands(app: App): void {
                   type: 'mrkdwn',
                   text: [
                     `*Level:* ${user.level}/5`,
-                    `*XP:* ${user.xp}`,
                     `*Streak:* ${user.streakDays} day${user.streakDays !== 1 ? 's' : ''}`,
                     '',
                     `*SRS Cards:* ${cardStats.total} total`,
@@ -192,7 +188,7 @@ export function registerCommands(app: App): void {
 
             const sections: string[] = [
               `*Name:* ${user.displayName ?? 'Unknown'}`,
-              `*Level:* ${user.level}/5 | *XP:* ${user.xp} | *Streak:* ${user.streakDays} day${user.streakDays !== 1 ? 's' : ''}`,
+              `*Level:* ${user.level}/5 | *Streak:* ${user.streakDays} day${user.streakDays !== 1 ? 's' : ''}`,
               `*Timezone:* ${user.timezone}`,
               `*SRS Cards:* ${cardStats.total} (${cardStats.due} due)`,
             ];

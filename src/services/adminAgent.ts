@@ -35,7 +35,7 @@ export function buildAdminSystemPrompt(adminUserId?: number): string {
 
 ## How Learning Works
 - **SM-2 SRS**: Cards have ease factor (≥1.3), interval (days), and repetitions. Quality 0-5 maps to: 0-2 = incorrect (reset), 3-5 = correct (increase interval).
-- **XP & Levels**: Users earn XP for participation. Levels 1-5 gate content difficulty. XP thresholds trigger auto level-up.
+- **Levels**: Levels 1-5 gate content difficulty. Levels are set by the teacher (LLM or admin) based on demonstrated proficiency, not volume.
 - **Streaks**: Daily practice tracked with timezone awareness.
 - **Error Tracking**: Every grammar, vocab, conjugation, and pronunciation error is logged. The system uses these to personalize teaching.
 - **User Memory**: LLM-generated learner profiles summarize strengths, weaknesses, and interests. Injected into prompts for personalization.
