@@ -1,8 +1,8 @@
 /**
- * TTS Service — text-to-speech via Deepgram Aura-2 API.
+ * TTS Service — text-to-speech via Azure Speech Service.
  *
- * Reuses the Deepgram API key already configured for STT.
- * Default voice: aura-2-antonia-es (Argentine Spanish).
+ * Uses Azure's REST API with SSML for Argentine Spanish voices
+ * (es-AR-ElenaNeural, es-AR-TomasNeural) with speed control.
  */
 import { GringoError } from '../errors/gringoError';
 import { getTraceId } from '../observability/context';
@@ -13,13 +13,14 @@ import { getSetting } from './settings';
 const ttsLog = log.withScope('tts');
 
 let apiKey: string | null = null;
+let region: string = 'eastus';
 
 const TTS_TIMEOUT_MS = 15_000;
-const DEEPGRAM_TTS_URL = 'https://api.deepgram.com/v1/speak';
 
-export function initTts(deepgramApiKey: string): void {
-  apiKey = deepgramApiKey;
-  ttsLog.info('TTS initialized (Deepgram Aura-2)');
+export function initTts(azureKey: string, azureRegion?: string): void {
+  apiKey = azureKey;
+  if (azureRegion) region = azureRegion;
+  ttsLog.info(`TTS initialized (Azure Speech — ${region})`);
 }
 
 /** @internal — test-only hook */
@@ -32,33 +33,65 @@ export function isTtsAvailable(): boolean {
 }
 
 /**
+ * Build SSML for Azure TTS with optional speed control.
+ */
+function buildSsml(text: string, voice: string, speed: number): string {
+  // Escape XML special chars in text
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+  const lang = voice.split('-').slice(0, 2).join('-'); // e.g. "es-AR" from "es-AR-ElenaNeural"
+
+  // Only wrap in prosody if speed != 1.0
+  const content = speed !== 1.0
+    ? `<prosody rate="${speed.toFixed(2)}">${escaped}</prosody>`
+    : escaped;
+
+  return `<speak version='1.0' xml:lang='${lang}'>
+  <voice xml:lang='${lang}' name='${voice}'>${content}</voice>
+</speak>`;
+}
+
+/**
  * Synthesize speech from text. Returns raw audio buffer (mp3).
+ *
+ * @param text - Text to synthesize
+ * @param speed - Speaking rate (0.5 = half speed, 1.0 = normal, 2.0 = double). Default from settings.
  */
 export async function synthesizeSpeech(
   text: string,
-  model?: string,
+  speed?: number,
 ): Promise<Buffer> {
-  const ttsModel = model ?? getSetting('tts.model', 'aura-2-antonia-es');
   if (!apiKey) {
     throw new GringoError({
-      message: 'TTS not initialized. Set DEEPGRAM_API_KEY.',
+      message: 'TTS not initialized. Set AZURE_SPEECH_KEY.',
       code: 'ERR_TTS_FAILED',
     });
   }
 
+  const voice = getSetting('tts.voice', 'es-AR-ElenaNeural') as string;
+  const defaultSpeed = getSetting('tts.speed', 1.0) as number;
+  const effectiveSpeed = speed ?? defaultSpeed;
   const traceId = getTraceId();
 
-  try {
-    const params = new URLSearchParams({ model: ttsModel });
+  const ssml = buildSsml(text, voice, effectiveSpeed);
+  const url = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
 
+  try {
     const response = await withTimeout(
-      fetch(`${DEEPGRAM_TTS_URL}?${params}`, {
+      fetch(url, {
         method: 'POST',
         headers: {
-          Authorization: `Token ${apiKey}`,
-          'Content-Type': 'application/json',
+          'Ocp-Apim-Subscription-Key': apiKey,
+          'Content-Type': 'application/ssml+xml',
+          'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
+          'User-Agent': 'ProjectGringo',
         },
-        body: JSON.stringify({ text }),
+        body: ssml,
       }),
       TTS_TIMEOUT_MS,
     );
@@ -66,7 +99,7 @@ export async function synthesizeSpeech(
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'unknown');
       throw new GringoError({
-        message: `Deepgram TTS error: HTTP ${response.status} — ${errorText}`,
+        message: `Azure TTS error: HTTP ${response.status} — ${errorText}`,
         code: 'ERR_TTS_FAILED',
         trace_id: traceId,
         metadata: { status: response.status },
@@ -76,7 +109,7 @@ export async function synthesizeSpeech(
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    ttsLog.info(`TTS generated ${buffer.length} bytes for "${text.slice(0, 50)}"`);
+    ttsLog.info(`TTS generated ${buffer.length} bytes for "${text.slice(0, 50)}" (speed=${effectiveSpeed}, voice=${voice})`);
     return buffer;
   } catch (err) {
     if (err instanceof GringoError) throw err;

@@ -33,10 +33,14 @@ const bootLog = log.withScope('boot');
     initLlm(config.anthropic);
   }
 
-  // 3b. Initialize STT & TTS (both use Deepgram API key)
+  // 3b. Initialize STT (Deepgram)
   if (config.deepgram) {
     initStt(config.deepgram);
-    initTts(config.deepgram.apiKey);
+  }
+
+  // 3c. Initialize TTS (Azure Speech)
+  if (config.azure) {
+    initTts(config.azure.speechKey, config.azure.speechRegion);
   }
 
   // 4. Seed default settings, prompts & content

@@ -24,10 +24,9 @@ export interface DeepgramConfig {
   apiKey: string;
 }
 
-export interface TtsConfig {
-  apiKey: string;
-  voice: string;
-  languageCode: string;
+export interface AzureSpeechConfig {
+  speechKey: string;
+  speechRegion: string;
 }
 
 export interface Config {
@@ -36,5 +35,5 @@ export interface Config {
   app: AppConfig;
   anthropic?: AnthropicConfig;
   deepgram?: DeepgramConfig;
-  tts?: TtsConfig;
+  azure?: AzureSpeechConfig;
 }

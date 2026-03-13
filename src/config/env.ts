@@ -78,12 +78,11 @@ export function loadConfig(): Config {
     };
   }
 
-  const ttsKey = process.env.GOOGLE_TTS_API_KEY?.trim();
-  if (ttsKey) {
-    config.tts = {
-      apiKey: ttsKey,
-      voice: opt('TTS_VOICE', 'es-US-Standard-A'),
-      languageCode: opt('TTS_LANGUAGE_CODE', 'es-AR'),
+  const azureSpeechKey = process.env.AZURE_SPEECH_KEY?.trim();
+  if (azureSpeechKey) {
+    config.azure = {
+      speechKey: azureSpeechKey,
+      speechRegion: opt('AZURE_SPEECH_REGION', 'eastus'),
     };
   }
 
@@ -106,5 +105,5 @@ export function printConfigSnapshot(config: Config): void {
   configLog.info(`  app.adminUserIds: [${config.app.adminUserIds.join(', ')}]`);
   configLog.info(`  anthropic: ${config.anthropic ? `configured (model: ${config.anthropic.model})` : 'not configured'}`);
   configLog.info(`  deepgram: ${config.deepgram ? 'configured' : 'not configured'}`);
-  configLog.info(`  tts: ${config.tts ? `configured (voice: ${config.tts.voice})` : 'not configured'}`);
+  configLog.info(`  azure: ${config.azure ? `configured (region: ${config.azure.speechRegion})` : 'not configured'}`);
 }
