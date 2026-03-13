@@ -243,6 +243,14 @@ function buildLessonView(slackUserId: string, state: HomeSessionState): Record<s
       elements: [{ type: 'mrkdwn', text: attemptLine }],
     });
 
+    // Show inline warning (e.g. non-attempt feedback) if present
+    if (state.warningText) {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: state.warningText },
+      });
+    }
+
     blocks.push({
       type: 'actions',
       elements: [
@@ -733,6 +741,16 @@ export function registerHomeHandler(app: App): void {
 
     await runWithObservabilityContext(async () => {
       try {
+        // Clear any previous warning when reopening the modal
+        const slackUserId = body.user.id;
+        const user = getOrCreateUser(slackUserId);
+        const state = getHomeSession(user.id);
+        if (state?.warningText) {
+          state.warningText = null;
+          setHomeSession(state);
+          publishHomeTab(client, slackUserId).catch(() => {});
+        }
+
         await client.views.open({
           trigger_id: (body as any).trigger_id,
           view: {
@@ -783,19 +801,10 @@ export function registerHomeHandler(app: App): void {
         const exerciseText = state.unit.exercisePrompt ?? state.unit.title;
         const grade = await gradeExerciseResponse(current.unit, exerciseText, answer, user.id, 'text');
 
-        // If the LLM says it's not an attempt, show feedback on the Home tab
+        // If the LLM says it's not an attempt, stay on lesson view with inline warning
         if (!grade.isAttempt) {
           homeLog.info(`Non-exercise response in modal from ${slackUserId}: "${answer.slice(0, 60)}"`);
-          // Create a "not an attempt" grade result to show on Home tab
-          state.view = 'grade';
-          state.lastGradeResult = {
-            passed: false,
-            score: 0,
-            feedback: ':thinking_face: That didn\'t look like an exercise answer. Try responding in Spanish to the exercise prompt. If you have a question, chat with me in DMs!',
-            errors: [],
-            correction: '',
-            isAttempt: false,
-          };
+          state.warningText = ':thinking_face: That didn\'t look like an exercise answer. Try responding in Spanish to the exercise prompt. If you have a question, chat with me in DMs!';
           setHomeSession(state);
           await publishHomeTab(client, slackUserId);
           return;

@@ -27,6 +27,8 @@ export interface HomeSessionState {
   unit: CurriculumUnit | null;
   /** Last grading result (shown after exercise submission) */
   lastGradeResult: GradeResult | null;
+  /** Inline warning shown on the lesson view (e.g. non-attempt feedback) */
+  warningText: string | null;
   /** SRS review state (card IDs, current index, results) */
   srsReview: SrsHomeReview | null;
   updatedAt: number;
@@ -67,6 +69,7 @@ export function createDefaultSession(userId: number, slackUserId: string): HomeS
     exerciseText: null,
     unit: null,
     lastGradeResult: null,
+    warningText: null,
     srsReview: null,
     updatedAt: Date.now(),
   };
@@ -130,6 +133,7 @@ export function recoverHomeSessions(): number {
         exerciseText: stateJson.exerciseText ?? null,
         unit: stateJson.unit ?? null,
         lastGradeResult: stateJson.lastGradeResult ?? null,
+        warningText: null,
         srsReview: stateJson.srsReview ?? null,
         updatedAt: Date.now(),
       };
