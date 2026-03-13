@@ -487,7 +487,7 @@ export function formatGradeBlocks(result: GradeResult, unit: CurriculumUnit, pas
     });
     blocks.push({
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: ':speaker: _Listen to the audio below to hear how it sounds._' }],
+      elements: [{ type: 'mrkdwn', text: ':speaker: _Listen to the audio below for an explanation and the correct pronunciation._' }],
     });
   }
 

@@ -57,6 +57,33 @@ function buildSsml(text: string, voice: string, speed: number): string {
 }
 
 /**
+ * Build SSML with multiple voice segments (e.g. English + Spanish in one clip).
+ * Each segment specifies its own voice and text.
+ */
+function buildMultiVoiceSsml(
+  segments: Array<{ text: string; voice: string }>,
+  speed: number,
+): string {
+  const parts = segments.map((seg) => {
+    const escaped = seg.text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+
+    const lang = seg.voice.split('-').slice(0, 2).join('-');
+    const content = speed !== 1.0
+      ? `<prosody rate="${speed.toFixed(2)}">${escaped}</prosody>`
+      : escaped;
+
+    return `<voice xml:lang='${lang}' name='${seg.voice}'>${content}</voice>`;
+  });
+
+  return `<speak version='1.0' xml:lang='en-US'>\n${parts.join('\n')}\n</speak>`;
+}
+
+/**
  * Synthesize speech from text. Returns raw audio buffer (mp3).
  *
  * @param text - Text to synthesize
@@ -125,6 +152,86 @@ export async function synthesizeSpeech(
 
     throw new GringoError({
       message: `TTS failed: ${err instanceof Error ? err.message : String(err)}`,
+      code: 'ERR_TTS_FAILED',
+      cause: err,
+      trace_id: traceId,
+    });
+  }
+}
+
+/**
+ * Synthesize a bilingual audio clip mixing English and Spanish voices.
+ * Segments alternate between voices in a single audio file.
+ */
+export async function synthesizeBilingualSpeech(
+  segments: Array<{ text: string; lang: 'en' | 'es' }>,
+  speed?: number,
+): Promise<Buffer> {
+  if (!apiKey) {
+    throw new GringoError({
+      message: 'TTS not initialized. Set AZURE_SPEECH_KEY.',
+      code: 'ERR_TTS_FAILED',
+    });
+  }
+
+  const spanishVoice = getSetting('tts.voice', 'es-AR-ElenaNeural') as string;
+  const englishVoice = getSetting('tts.english_voice', 'en-US-JennyNeural') as string;
+  const defaultSpeed = getSetting('tts.speed', 1.0) as number;
+  const effectiveSpeed = speed ?? defaultSpeed;
+  const traceId = getTraceId();
+
+  const voiceSegments = segments.map((seg) => ({
+    text: seg.text,
+    voice: seg.lang === 'en' ? englishVoice : spanishVoice,
+  }));
+
+  const ssml = buildMultiVoiceSsml(voiceSegments, effectiveSpeed);
+  const url = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
+
+  try {
+    const response = await withTimeout(
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'Ocp-Apim-Subscription-Key': apiKey,
+          'Content-Type': 'application/ssml+xml',
+          'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
+          'User-Agent': 'ProjectGringo',
+        },
+        body: ssml,
+      }),
+      TTS_TIMEOUT_MS,
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'unknown');
+      throw new GringoError({
+        message: `Azure TTS error: HTTP ${response.status} — ${errorText}`,
+        code: 'ERR_TTS_FAILED',
+        trace_id: traceId,
+        metadata: { status: response.status },
+      });
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    ttsLog.info(`Bilingual TTS generated ${buffer.length} bytes (${segments.length} segments)`);
+    return buffer;
+  } catch (err) {
+    if (err instanceof GringoError) throw err;
+
+    if (err instanceof TimeoutError) {
+      throw new GringoError({
+        message: 'Bilingual TTS synthesis timed out',
+        code: 'ERR_TTS_FAILED',
+        cause: err,
+        trace_id: traceId,
+      });
+    }
+
+    throw new GringoError({
+      message: `Bilingual TTS failed: ${err instanceof Error ? err.message : String(err)}`,
       code: 'ERR_TTS_FAILED',
       cause: err,
       trace_id: traceId,

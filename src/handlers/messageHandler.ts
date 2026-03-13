@@ -26,7 +26,7 @@ import type { LlmMessage } from '../services/llm';
 import { postMessage } from '../utils/slackHelpers';
 import { getSetting } from '../services/settings';
 import { sendWelcomeDm } from './onboardingHandler';
-import { generatePronunciationAudio } from '../services/pronunciation';
+import { generatePronunciationAudio, generateCorrectionAudio } from '../services/pronunciation';
 import { uploadAudioToSlack } from '../utils/slackAudio';
 import { getActiveTest } from '../services/placementTest';
 import {
@@ -236,11 +236,11 @@ export function registerMessageHandlers(app: App): void {
               const blocks = formatCurriculumGradeBlocks(grade, current.unit, false);
               await say({ text: `Score: ${grade.score}`, blocks: blocks as any });
 
-              // Send pronunciation audio of the correct answer
+              // Send bilingual correction audio (English feedback + Spanish correction)
               if (grade.correction) {
-                const audioBuffers = await generatePronunciationAudio([grade.correction]);
-                if (audioBuffers[0]) {
-                  await uploadAudioToSlack(client, channelId, audioBuffers[0], grade.correction);
+                const audio = await generateCorrectionAudio(grade.feedback, grade.correction);
+                if (audio) {
+                  await uploadAudioToSlack(client, channelId, audio, `Correction: ${grade.correction}`);
                 }
               }
 
