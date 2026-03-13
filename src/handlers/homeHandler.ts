@@ -21,6 +21,8 @@ import {
   gradeExerciseResponse,
   markUnitPassed,
   recordAttempt,
+  getCachedLessonContent,
+  cacheLessonContent,
 } from '../services/curriculumDelivery';
 import type { GradeResult } from '../services/curriculumDelivery';
 import { getCurriculumCount, getCurriculum } from '../services/curriculum';
@@ -703,25 +705,43 @@ export function registerHomeHandler(app: App): void {
           return;
         }
 
-        // Show loading state
-        const loadingState = createDefaultSession(user.id, slackUserId);
-        loadingState.view = 'lesson';
-        loadingState.unit = current.unit;
-        loadingState.lessonText = '_Generating your lesson..._';
-        setHomeSession(loadingState);
-        await publishHomeTab(client, slackUserId);
+        // Check for cached lesson content first
+        const cached = getCachedLessonContent(user.id, current.unit.id);
+        let lessonText: string;
+        let exerciseText: string;
 
-        // Generate lesson and exercise
-        const lessonText = await generateUnitLesson(current.unit, user.id);
-        const exerciseText = await generateUnitExercise(current.unit, user.id);
+        if (cached.lessonText && cached.exerciseText) {
+          // Use cached content — no LLM call needed
+          lessonText = cached.lessonText;
+          exerciseText = cached.exerciseText;
+          homeLog.info(`Using cached lesson for ${slackUserId}: Unit ${current.unit.unitOrder}`);
+        } else {
+          // Show loading state while generating
+          const loadingState = createDefaultSession(user.id, slackUserId);
+          loadingState.view = 'lesson';
+          loadingState.unit = current.unit;
+          loadingState.lessonText = '_Generating your lesson..._';
+          setHomeSession(loadingState);
+          await publishHomeTab(client, slackUserId);
+
+          // Generate lesson and exercise
+          lessonText = await generateUnitLesson(current.unit, user.id);
+          exerciseText = await generateUnitExercise(current.unit, user.id);
+
+          // Cache for future visits
+          cacheLessonContent(user.id, current.unit.id, lessonText, exerciseText);
+        }
 
         // Mark unit as practicing
         markUnitPracticing(user.id, current.unit.id);
 
         // Update state with content
-        loadingState.lessonText = lessonText;
-        loadingState.exerciseText = exerciseText;
-        setHomeSession(loadingState);
+        const state = createDefaultSession(user.id, slackUserId);
+        state.view = 'lesson';
+        state.unit = current.unit;
+        state.lessonText = lessonText;
+        state.exerciseText = exerciseText;
+        setHomeSession(state);
         await publishHomeTab(client, slackUserId);
 
         homeLog.info(`Lesson delivered on Home tab for ${slackUserId}: Unit ${current.unit.unitOrder}`);
@@ -798,7 +818,8 @@ export function registerHomeHandler(app: App): void {
           return;
         }
 
-        const exerciseText = state.unit.exercisePrompt ?? state.unit.title;
+        // Use the actual generated exercise text (what the user sees), not the template prompt
+        const exerciseText = state.exerciseText ?? state.unit.exercisePrompt ?? state.unit.title;
         const grade = await gradeExerciseResponse(current.unit, exerciseText, answer, user.id, 'text');
 
         // If the LLM says it's not an attempt, stay on lesson view with inline warning

@@ -355,6 +355,36 @@ export function placeUserAtUnit(userId: number, unitOrder: number): void {
   initializeUserProgress(userId, unitOrder);
 }
 
+// ── Lesson/exercise cache ────────────────────────────────────
+
+/**
+ * Get cached lesson/exercise text for a user's unit.
+ */
+export function getCachedLessonContent(userId: number, unitId: number): { lessonText: string | null; exerciseText: string | null } {
+  const db = getDb();
+  const result = db.exec(
+    `SELECT lesson_text, exercise_text FROM user_curriculum_progress
+     WHERE user_id = ${userId} AND unit_id = ${unitId}`,
+  );
+  if (!result.length || !result[0].values.length) return { lessonText: null, exerciseText: null };
+  const row = result[0].values[0];
+  return { lessonText: row[0] as string | null, exerciseText: row[1] as string | null };
+}
+
+/**
+ * Save generated lesson/exercise text to the cache.
+ */
+export function cacheLessonContent(userId: number, unitId: number, lessonText: string, exerciseText: string): void {
+  const db = getDb();
+  db.run(
+    `UPDATE user_curriculum_progress
+     SET lesson_text = '${lessonText.replace(/'/g, "''")}',
+         exercise_text = '${exerciseText.replace(/'/g, "''")}',
+         updated_at = datetime('now')
+     WHERE user_id = ${userId} AND unit_id = ${unitId}`,
+  );
+}
+
 // ── Unit delivery ───────────────────────────────────────────
 
 /**

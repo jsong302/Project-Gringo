@@ -61,6 +61,8 @@ export async function initDb(config: DbConfig): Promise<Database> {
       }
     };
     addColumnIfMissing('users', 'response_mode', "TEXT NOT NULL DEFAULT 'text'");
+    addColumnIfMissing('user_curriculum_progress', 'lesson_text', 'TEXT');
+    addColumnIfMissing('user_curriculum_progress', 'exercise_text', 'TEXT');
 
     const result = db.exec(
       "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence'",

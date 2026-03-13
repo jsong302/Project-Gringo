@@ -318,6 +318,8 @@ CREATE TABLE IF NOT EXISTS user_curriculum_progress (
         CHECK (status IN ('locked', 'active', 'practicing', 'passed', 'skipped')),
     best_score INTEGER,
     attempts INTEGER NOT NULL DEFAULT 0,
+    lesson_text TEXT,
+    exercise_text TEXT,
     started_at TEXT,
     passed_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
