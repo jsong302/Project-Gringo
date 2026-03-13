@@ -2,6 +2,9 @@ import { callLlm } from './llm';
 import { getPromptOrThrow, interpolate } from './prompts';
 import { getDb } from '../db';
 import { log } from '../utils/logger';
+import { logGradingErrors, type ErrorCategory } from './errorTracker';
+import { createCard, type CardType } from './srsRepository';
+import { getSetting } from './settings';
 
 const lessonLog = log.withScope('lesson');
 
@@ -208,6 +211,201 @@ export function logLesson(opts: {
 
   const result = db.exec('SELECT last_insert_rowid()');
   return result[0].values[0][0] as number;
+}
+
+// ── Lesson grading ──────────────────────────────────────────
+
+export interface GradingResult {
+  correct: 'yes' | 'partial' | 'no';
+  score: number;
+  errors: Array<{ type: ErrorCategory; description: string; correction: string }>;
+  praise: string;
+  suggestion: string;
+  responseEs: string;
+}
+
+/**
+ * Grade a student's text or voice response to a lesson exercise.
+ */
+export async function gradeLessonResponse(
+  exercise: string,
+  studentResponse: string,
+  userLevel: number,
+  userId: number,
+): Promise<GradingResult> {
+  const template = getPromptOrThrow('grade_voice_response');
+  const prompt = interpolate(template, {
+    level: String(userLevel),
+    exercise,
+    transcript: studentResponse,
+  });
+
+  const response = await callLlm({
+    system: 'Respond only with valid JSON. No additional text.',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.3,
+    maxTokens: 512,
+  });
+
+  const parsed = parseLlmJson<any>(response.text);
+
+  const result: GradingResult = {
+    correct: parsed.correct ?? 'no',
+    score: parsed.score ?? 0,
+    errors: parsed.errors ?? [],
+    praise: parsed.praise ?? '',
+    suggestion: parsed.suggestion ?? '',
+    responseEs: parsed.response_es ?? '',
+  };
+
+  // Log errors to errorTracker
+  if (result.errors.length > 0) {
+    logGradingErrors(userId, result.errors, studentResponse, 'text');
+  }
+
+  lessonLog.info(`Graded lesson response: ${result.correct} (score ${result.score}/5)`);
+  return result;
+}
+
+/**
+ * Format grading result as Slack blocks.
+ */
+export function formatGradingBlocks(result: GradingResult): object[] {
+  const scoreEmoji = result.score >= 4 ? '🌟' : result.score >= 3 ? '👍' : '💪';
+  const correctLabel = result.correct === 'yes' ? '✅ Correcto' : result.correct === 'partial' ? '🟡 Parcialmente' : '❌ Incorrecto';
+
+  const blocks: object[] = [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `${correctLabel} — ${scoreEmoji} ${result.score}/5`,
+      },
+    },
+  ];
+
+  if (result.praise) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Lo bueno:* ${result.praise}` },
+    });
+  }
+
+  if (result.errors.length > 0) {
+    const errorLines = result.errors
+      .map((e) => `• _${e.type}:_ ${e.description} → *${e.correction}*`)
+      .join('\n');
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Errores:*\n${errorLines}` },
+    });
+  }
+
+  if (result.suggestion) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `💡 ${result.suggestion}` }],
+    });
+  }
+
+  if (result.responseEs) {
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: result.responseEs },
+    });
+  }
+
+  return blocks;
+}
+
+// ── Lesson lookup ────────────────────────────────────────────
+
+/**
+ * Find a lesson by its Slack message timestamp.
+ */
+export function getLessonByMessageTs(
+  channelId: string,
+  messageTs: string,
+): { id: number; contentJson: string } | null {
+  const db = getDb();
+  const result = db.exec(
+    `SELECT id, content_json FROM lesson_log
+     WHERE slack_channel_id = '${escapeSql(channelId)}'
+       AND slack_message_ts = '${escapeSql(messageTs)}'
+     LIMIT 1`,
+  );
+  if (!result.length || !result[0].values.length) return null;
+  return {
+    id: result[0].values[0][0] as number,
+    contentJson: result[0].values[0][1] as string,
+  };
+}
+
+// ── Lesson engagement ────────────────────────────────────────
+
+export function logLessonEngagement(
+  lessonLogId: number,
+  userId: number,
+  type: 'voice_response' | 'text_response' | 'reaction',
+  reactionEmoji?: string,
+): void {
+  const db = getDb();
+  db.run(
+    `INSERT INTO lesson_engagement (lesson_log_id, user_id, engagement_type, reaction_emoji)
+     VALUES (${lessonLogId}, ${userId}, '${type}', ${reactionEmoji ? `'${escapeSql(reactionEmoji)}'` : 'NULL'})`,
+  );
+  lessonLog.debug(`Logged engagement: user ${userId} ${type} on lesson ${lessonLogId}`);
+}
+
+// ── Auto-create SRS cards from lesson vocabulary ─────────────
+
+/**
+ * Look up a vocabulary entry by Spanish word.
+ */
+function findVocabByWord(word: string): number | null {
+  const db = getDb();
+  const result = db.exec(
+    `SELECT id FROM vocabulary WHERE LOWER(spanish) = LOWER('${escapeSql(word)}') LIMIT 1`,
+  );
+  if (!result.length || !result[0].values.length) return null;
+  return result[0].values[0][0] as number;
+}
+
+/**
+ * Create SRS cards from a lesson's vocabulary for a list of users.
+ * Respects the `content.new_cards_per_day` setting.
+ */
+export function createCardsFromLesson(
+  lesson: DailyLesson,
+  userIds: number[],
+): number {
+  const maxNewCards = getSetting('content.new_cards_per_day', 5) as number;
+  let totalCreated = 0;
+
+  // Find vocabulary IDs for lesson words
+  const vocabIds: number[] = [];
+  for (const v of lesson.vocabulary) {
+    const id = findVocabByWord(v.word);
+    if (id) vocabIds.push(id);
+  }
+
+  if (vocabIds.length === 0) {
+    lessonLog.debug('No matching vocabulary found for lesson SRS cards');
+    return 0;
+  }
+
+  // Create cards for each user (capped by maxNewCards)
+  const cardsToCreate = vocabIds.slice(0, maxNewCards);
+  for (const userId of userIds) {
+    for (const contentId of cardsToCreate) {
+      createCard(userId, 'vocab', contentId);
+      totalCreated++;
+    }
+  }
+
+  lessonLog.info(`Created ${totalCreated} SRS cards from lesson vocab for ${userIds.length} users`);
+  return totalCreated;
 }
 
 function escapeSql(str: string): string {

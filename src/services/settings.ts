@@ -178,6 +178,9 @@ export const DEFAULT_SETTINGS: Array<{ key: string; value: unknown; description:
   // Admin
   { key: 'admin.user_ids', value: [], description: 'Slack user IDs with admin access (JSON array)' },
 
+  // Thread
+  { key: 'thread.max_history_messages', value: 20, description: 'Max messages loaded from DB for thread context' },
+
   // Memory
   { key: 'memory.regenerate_after_interactions', value: 20, description: 'Regenerate user memory after this many new interactions' },
 ];

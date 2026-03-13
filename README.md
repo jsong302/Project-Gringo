@@ -112,6 +112,82 @@ npm test
 | `ADMIN_USER_IDS` | — | Comma-separated Slack user IDs to bootstrap as admins |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Claude model to use |
 
+## Slack Workspace Setup
+
+Before running the bot, create these channels and configure your Slack app:
+
+### 1. Create Channels
+
+Create the following public channels in your Slack workspace:
+
+| Channel | Purpose |
+|---|---|
+| `#charla-libre` | Free conversation practice with the bot |
+| `#daily-lesson` | Daily lessons posted Mon–Fri at 9am |
+| `#lunfardo-del-dia` | Daily lunfardo word posted at noon |
+| `#repaso` | SRS flashcard review sessions |
+| `#desafios` | Pair practice / dialogue challenges |
+
+After creating each channel, **invite the bot** to it (`/invite @Gringo`).
+
+### 2. Create the Slack App
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New App** → **From scratch**
+2. Name it `Gringo` and select your workspace
+
+### 3. Enable Socket Mode
+
+1. Go to **Settings → Socket Mode** and enable it
+2. Generate an app-level token with the `connections:write` scope — this is your `SLACK_APP_TOKEN` (`xapp-...`)
+
+### 4. Bot Token Scopes
+
+Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
+
+| Scope | Reason |
+|---|---|
+| `chat:write` | Send messages |
+| `commands` | Handle slash commands |
+| `files:read` | Read voice memo audio files |
+| `files:write` | Upload pronunciation audio clips |
+| `im:history` | Read DM messages (for charla + admin) |
+| `im:write` | Send DMs (onboarding, notifications) |
+| `channels:history` | Read messages in public channels |
+| `users:read` | Look up user info |
+| `team:read` | Detect new members for onboarding |
+
+Install the app to your workspace. The **Bot User OAuth Token** (`xoxb-...`) is your `SLACK_BOT_TOKEN`.
+
+### 5. Slash Command
+
+Go to **Slash Commands** and create:
+
+| Command | Request URL | Description |
+|---|---|---|
+| `/gringo` | *(leave blank for Socket Mode)* | Gringo bot commands |
+
+### 6. Event Subscriptions
+
+Go to **Event Subscriptions** → enable events, then under **Subscribe to bot events** add:
+
+| Event | Reason |
+|---|---|
+| `message.channels` | Respond to messages in channels |
+| `message.im` | Respond to DMs (charla + admin) |
+| `team_join` | Trigger onboarding for new members |
+
+### 7. Signing Secret
+
+Go to **Basic Information → App Credentials** and copy the **Signing Secret** — this is your `SLACK_SIGNING_SECRET`.
+
+### 8. Set Environment Variables
+
+Fill in your `.env` file with the tokens from steps above (see Required Environment Variables below).
+
+### 9. Bootstrap Admins
+
+Set `ADMIN_USER_IDS` in your `.env` to a comma-separated list of Slack user IDs who should have admin access. You can find user IDs by clicking a user's profile in Slack → **More** → **Copy member ID**.
+
 ## Slash Commands
 
 | Command | Description |

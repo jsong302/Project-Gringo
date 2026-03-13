@@ -18,8 +18,16 @@ export interface User {
   lastPracticeAt: string | null;
   preferredDifficulty: 'easy' | 'normal' | 'hard';
   timezone: string;
+  notificationPrefs: string;
   onboarded: boolean;
   createdAt: string;
+}
+
+export interface NotificationPrefs {
+  srsReminders: boolean;
+  dailyLessons: boolean;
+  quietStart?: string; // "22:00"
+  quietEnd?: string;   // "08:00"
 }
 
 // ── CRUD ────────────────────────────────────────────────────
@@ -212,10 +220,37 @@ function rowToUser(row: unknown[]): User {
     lastPracticeAt: row[6] as string | null,
     preferredDifficulty: row[7] as User['preferredDifficulty'],
     timezone: row[8] as string,
+    notificationPrefs: (row[9] as string) ?? '{}',
     onboarded: !!(row[10] as number),
     createdAt: row[11] as string,
   };
 }
+
+// ── Notification Prefs ──────────────────────────────────────
+
+function defaultPrefs(): NotificationPrefs {
+  return { srsReminders: true, dailyLessons: true };
+}
+
+export function getNotificationPrefs(userId: number): NotificationPrefs {
+  const user = getUserById(userId);
+  if (!user) return defaultPrefs();
+  try {
+    return { ...defaultPrefs(), ...JSON.parse(user.notificationPrefs ?? '{}') };
+  } catch {
+    return defaultPrefs();
+  }
+}
+
+export function setNotificationPrefs(userId: number, prefs: NotificationPrefs): void {
+  const db = getDb();
+  db.run(
+    `UPDATE users SET notification_prefs = '${esc(JSON.stringify(prefs))}', updated_at = datetime('now') WHERE id = ${userId}`,
+  );
+  userLog.info(`User ${userId} notification prefs updated: ${JSON.stringify(prefs)}`);
+}
+
+// ── Helpers ─────────────────────────────────────────────────
 
 function esc(str: string): string {
   return str.replace(/'/g, "''");

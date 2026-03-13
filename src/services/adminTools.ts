@@ -185,6 +185,13 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
 
+  // Error pattern analysis
+  {
+    name: 'analyze_error_patterns',
+    description: 'Analyze error patterns across all users over the last 7 days. Shows learning error trends, common mistakes, and system error frequency.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+
   // Charla / Learning tools
   {
     name: 'log_learning_error',
@@ -222,6 +229,20 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
         amount: { type: 'number', description: 'XP amount to award' },
       },
       required: ['user_id', 'amount'],
+    },
+  },
+  {
+    name: 'pronounce',
+    description: 'Generate an audio pronunciation clip for a Spanish word or phrase. Use this when chatting in Spanish to demonstrate pronunciation of words.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        phrase: {
+          type: 'string',
+          description: 'The Spanish word or phrase to pronounce (e.g. "laburo", "¿Cómo andás?")',
+        },
+      },
+      required: ['phrase'],
     },
   },
 ];
@@ -512,6 +533,110 @@ register('get_learner_context', (input) => {
     memoryProfile: memoryPrompt || 'No learner profile generated yet',
     srs: stats,
     topErrors: errors.slice(0, 5),
+  }, null, 2);
+});
+
+// Pronunciation (async — actual audio generation happens in the handler)
+register('pronounce', (input) => {
+  const phrase = input.phrase as string;
+  toolLog.info(`Pronounce requested: "${phrase}"`);
+  return JSON.stringify({ status: 'pending', phrase, message: 'Audio pronunciation will be sent as a voice clip.' });
+});
+
+register('analyze_error_patterns', () => {
+  const db = getDb();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Learning errors by category (last 7 days)
+  const learningByCategory = db.exec(
+    `SELECT error_category, COUNT(*) as count
+     FROM learning_errors
+     WHERE created_at >= '${sevenDaysAgo}'
+     GROUP BY error_category
+     ORDER BY count DESC`,
+  );
+  const categoryBreakdown = learningByCategory.length
+    ? learningByCategory[0].values.map((row) => ({ category: row[0], count: row[1] }))
+    : [];
+
+  // Learning errors by user (last 7 days)
+  const learningByUser = db.exec(
+    `SELECT u.display_name, u.slack_user_id, COUNT(*) as count
+     FROM learning_errors le
+     JOIN users u ON le.user_id = u.id
+     WHERE le.created_at >= '${sevenDaysAgo}'
+     GROUP BY le.user_id
+     ORDER BY count DESC`,
+  );
+  const userBreakdown = learningByUser.length
+    ? learningByUser[0].values.map((row) => ({ displayName: row[0], slackUserId: row[1], count: row[2] }))
+    : [];
+
+  // Learning errors by day (last 7 days)
+  const learningByDay = db.exec(
+    `SELECT date(created_at) as day, COUNT(*) as count
+     FROM learning_errors
+     WHERE created_at >= '${sevenDaysAgo}'
+     GROUP BY date(created_at)
+     ORDER BY day`,
+  );
+  const dailyTrend = learningByDay.length
+    ? learningByDay[0].values.map((row) => ({ day: row[0], count: row[1] }))
+    : [];
+
+  // Sample recent learning error descriptions per category
+  const sampleErrors = db.exec(
+    `SELECT error_category, description, user_said, correction
+     FROM learning_errors
+     WHERE created_at >= '${sevenDaysAgo}'
+     ORDER BY created_at DESC
+     LIMIT 15`,
+  );
+  const samples = sampleErrors.length
+    ? sampleErrors[0].values.map((row) => ({
+        category: row[0],
+        description: row[1],
+        userSaid: row[2],
+        correction: row[3],
+      }))
+    : [];
+
+  // System errors by error_code (last 7 days)
+  const systemByCode = db.exec(
+    `SELECT error_code, COUNT(*) as count, MAX(message) as sample_message
+     FROM system_errors
+     WHERE created_at >= '${sevenDaysAgo}'
+     GROUP BY error_code
+     ORDER BY count DESC`,
+  );
+  const systemBreakdown = systemByCode.length
+    ? systemByCode[0].values.map((row) => ({ errorCode: row[0], count: row[1], sampleMessage: row[2] }))
+    : [];
+
+  // Total counts
+  const totalLearningResult = db.exec(
+    `SELECT COUNT(*) FROM learning_errors WHERE created_at >= '${sevenDaysAgo}'`,
+  );
+  const totalLearning = totalLearningResult.length ? (totalLearningResult[0].values[0][0] as number) : 0;
+
+  const totalSystemResult = db.exec(
+    `SELECT COUNT(*) FROM system_errors WHERE created_at >= '${sevenDaysAgo}'`,
+  );
+  const totalSystem = totalSystemResult.length ? (totalSystemResult[0].values[0][0] as number) : 0;
+
+  return JSON.stringify({
+    period: 'last 7 days',
+    learningErrors: {
+      total: totalLearning,
+      byCategory: categoryBreakdown,
+      byUser: userBreakdown,
+      dailyTrend,
+      recentSamples: samples,
+    },
+    systemErrors: {
+      total: totalSystem,
+      byErrorCode: systemBreakdown,
+    },
   }, null, 2);
 });
 

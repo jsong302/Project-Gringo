@@ -2,8 +2,8 @@
  * Message Handler — listens for messages and voice memos in channels.
  *
  * Handles:
- *  - Text messages in #charla-libre → charla conversation
- *  - Voice memos (file_shared audio) → transcribe → charla or grade
+ *  - Text messages → charla conversation
+ *  - Voice memos (audio files attached to messages) → transcribe → charla or pronunciation check
  *  - "No entiendo" detection → English explanation
  */
 import type { App } from '@slack/bolt';
@@ -15,15 +15,19 @@ import {
   startConversation,
   getConversationByThread,
   addTurn,
+  saveMessage,
+  getMessages,
 } from '../services/conversationTracker';
 import { processCharlaMessage } from '../services/charlaEngine';
 import { processVoiceMemo, formatVoiceResponseBlocks } from '../services/voiceProcessor';
-import { getMemoryForPrompt } from '../services/userMemory';
-import { logGradingErrors } from '../services/errorTracker';
+import { getMemoryForPrompt, generateMemory, getMemory } from '../services/userMemory';
+import { getLessonByMessageTs, gradeLessonResponse, formatGradingBlocks, logLessonEngagement } from '../services/lessonEngine';
 import type { LlmMessage } from '../services/llm';
 import { postMessage } from '../utils/slackHelpers';
-import { getXpForTextMessage, getXpForVoiceMemo } from '../services/settings';
+import { getXpForTextMessage, getXpForVoiceMemo, getSetting } from '../services/settings';
 import { isAdminDm, handleAdminDm } from './adminHandler';
+import { generatePronunciationAudio } from '../services/pronunciation';
+import { uploadAudioToSlack } from '../utils/slackAudio';
 
 const msgLog = log.withScope('message-handler');
 
@@ -60,19 +64,65 @@ async function shouldRespond(
   return false;
 }
 
+/**
+ * Check if a message has audio files attached (voice memos).
+ */
+function getAudioFile(message: any): any | null {
+  const files = message.files;
+  if (!Array.isArray(files) || files.length === 0) return null;
+
+  for (const file of files) {
+    const mime = file.mimetype ?? '';
+    if (mime.startsWith('audio/') || mime.includes('webm') || mime.includes('ogg')) {
+      return file;
+    }
+  }
+  return null;
+}
+
+/**
+ * Handle pronunciation audio generation and upload for a response.
+ */
+async function uploadPronunciationClips(
+  response: { pronunciations: string[] },
+  client: any,
+  channelId: string,
+  threadTs: string,
+): Promise<void> {
+  if (response.pronunciations.length === 0) return;
+
+  const audioBuffers = await generatePronunciationAudio(response.pronunciations);
+  for (let i = 0; i < audioBuffers.length; i++) {
+    if (audioBuffers[i]) {
+      await uploadAudioToSlack(
+        client,
+        channelId,
+        audioBuffers[i]!,
+        response.pronunciations[i],
+        threadTs,
+      );
+    }
+  }
+}
+
 // ── Registration ────────────────────────────────────────────
 
 export function registerMessageHandlers(app: App): void {
   app.message(async ({ message, client, say }) => {
     // Only handle user messages (not bot messages, not edits)
-    if (message.subtype || !('text' in message) || !message.text) return;
+    // Allow file_share subtype (voice memos) but skip other subtypes
+    if (message.subtype && message.subtype !== 'file_share') return;
     if ('bot_id' in message) return;
 
     const slackUserId = (message as any).user as string;
     const channelId = message.channel;
     const channelType = (message as any).channel_type ?? '';
     const threadTs = (message as any).thread_ts ?? (message as any).ts;
-    const text = (message as any).text as string;
+    const text = ((message as any).text ?? '') as string;
+    const audioFile = getAudioFile(message);
+
+    // Need either text or audio to respond
+    if (!text && !audioFile) return;
 
     await runWithObservabilityContext(async () => {
       try {
@@ -82,6 +132,44 @@ export function registerMessageHandlers(app: App): void {
           return;
         }
 
+        // ── Lesson thread detection ──────────────────────────
+        // Replies in lesson threads are always graded (no @mention needed)
+        const isThreadReply = (message as any).thread_ts != null;
+        if (isThreadReply) {
+          const lesson = getLessonByMessageTs(channelId, threadTs);
+          if (lesson) {
+            const user = getOrCreateUser(slackUserId);
+            const lessonContent = JSON.parse(lesson.contentJson);
+            const exercise = lessonContent.exercise ?? '';
+            const studentText = text || '';
+
+            // Handle voice memo in lesson thread: transcribe first
+            let responseText = studentText;
+            if (audioFile && !studentText) {
+              const { transcribeAudio } = await import('../services/stt');
+              const audioUrl = audioFile.url_private ?? '';
+              const botToken = process.env.SLACK_BOT_TOKEN ?? '';
+              const transcript = await transcribeAudio(audioUrl, botToken);
+              responseText = transcript.transcript;
+              logLessonEngagement(lesson.id, user.id, 'voice_response');
+            } else {
+              logLessonEngagement(lesson.id, user.id, 'text_response');
+            }
+
+            if (responseText) {
+              const grading = await gradeLessonResponse(exercise, responseText, user.level, user.id);
+              const blocks = formatGradingBlocks(grading);
+
+              updateStreak(user.id);
+              addXp(user.id, getXpForTextMessage());
+
+              await postMessage(client, channelId, grading.responseEs || grading.praise, blocks as any[], threadTs);
+              msgLog.info(`Graded lesson response from ${slackUserId}: ${grading.correct} (${grading.score}/5)`);
+            }
+            return;
+          }
+        }
+
         // Only respond in DMs or when @mentioned
         if (!await shouldRespond(text, channelType, client)) return;
 
@@ -89,34 +177,88 @@ export function registerMessageHandlers(app: App): void {
 
         // Check if there's an active conversation in this thread
         let conversation = getConversationByThread(channelId, threadTs);
-
         if (!conversation) {
-          // Start a new charla conversation
           conversation = startConversation(user.id, channelId, threadTs, 'charla');
         }
 
-        // Build conversation history from thread (simplified — uses the conversation turn count)
-        // In production, you'd fetch actual Slack thread history
-        const history: LlmMessage[] = [];
+        // Load thread history from DB for multi-turn context
+        const maxHistory = getSetting('thread.max_history_messages', 20);
+        const history: LlmMessage[] = getMessages(conversation.id, maxHistory);
 
-        // Add memory context as a system-level hint
+        // Compute memory context once (used by both voice and text paths)
         const memoryContext = getMemoryForPrompt(user.id);
 
-        // Process message
-        const response = await processCharlaMessage(text, history, user.level);
+        // ── Voice memo path ──────────────────────────────────
+        if (audioFile) {
+          const audioUrl = audioFile.url_private ?? '';
+          const botToken = process.env.SLACK_BOT_TOKEN ?? '';
 
-        // Track turn
+          msgLog.info(`Processing voice memo from ${slackUserId} (${audioFile.mimetype}, ${audioFile.size} bytes)${text ? ` with text: "${text.slice(0, 80)}"` : ''}`);
+
+          const result = await processVoiceMemo(
+            audioUrl,
+            botToken,
+            history,
+            user.level,
+            text || undefined,
+            memoryContext,
+            user.id,
+          );
+
+          addTurn(conversation.id);
+          updateStreak(user.id);
+          addXp(user.id, getXpForVoiceMemo());
+
+          // Save messages to DB for thread continuity
+          saveMessage(conversation.id, 'user', result.transcript.transcript);
+          saveMessage(conversation.id, 'assistant', result.response.text);
+
+          // Reply with transcript + response
+          const blocks = formatVoiceResponseBlocks(result);
+          await postMessage(
+            client,
+            channelId,
+            result.response.text,
+            blocks as any[],
+            threadTs,
+          );
+
+          // Upload pronunciation demo clips if the LLM generated any
+          await uploadPronunciationClips(result.response, client, channelId, threadTs);
+
+          msgLog.info(`Voice memo processed for ${slackUserId}`);
+          return;
+        }
+
+        // ── Text message path ────────────────────────────────
+
+        const response = await processCharlaMessage(text, history, user.level, memoryContext, user.id);
+
         addTurn(conversation.id);
-
-        // Update streak and XP
         updateStreak(user.id);
         addXp(user.id, getXpForTextMessage());
 
-        // Reply in thread
+        // Save messages to DB for thread continuity
+        saveMessage(conversation.id, 'user', text);
+        saveMessage(conversation.id, 'assistant', response.text);
+
         await say({
           text: response.text,
           thread_ts: threadTs,
         });
+
+        // Upload pronunciation demo clips if the LLM generated any
+        await uploadPronunciationClips(response, client, channelId, threadTs);
+
+        // Regenerate memory profile periodically
+        const memoryRegenInterval = getSetting('memory.regenerate_after_interactions', 20);
+        const currentMemory = getMemory(user.id);
+        const interactionsSinceMemory = user.xp - (currentMemory?.interactionCountAtGeneration ?? 0);
+        if (!currentMemory || interactionsSinceMemory >= memoryRegenInterval) {
+          generateMemory(user.id).catch((err) => {
+            msgLog.error(`Memory generation failed: ${err}`);
+          });
+        }
 
         msgLog.debug(`Replied to ${slackUserId} in ${channelId}`);
       } catch (err) {
@@ -125,73 +267,6 @@ export function registerMessageHandlers(app: App): void {
           text: 'Something went wrong. Please try again in a moment.',
           thread_ts: threadTs,
         });
-      }
-    });
-  });
-
-  // Listen for voice memos (file_shared events)
-  app.event('file_shared', async ({ event, client }) => {
-    await runWithObservabilityContext(async () => {
-      try {
-        // Get file info
-        const fileInfo = await client.files.info({ file: event.file_id });
-        const file = fileInfo.file;
-
-        if (!file) return;
-
-        // Only process audio files
-        const mimeType = file.mimetype ?? '';
-        if (!mimeType.startsWith('audio/') && !mimeType.includes('webm') && !mimeType.includes('ogg')) {
-          return;
-        }
-
-        const slackUserId = file.user ?? (event as any).user_id;
-        if (!slackUserId) return;
-
-        const channelId = file.channels?.[0] ?? (event as any).channel_id;
-        if (!channelId) return;
-
-        const threadTs = (file as any).shares?.public?.[channelId]?.[0]?.ts
-          ?? (file as any).timestamp?.toString()
-          ?? Date.now().toString();
-
-        const user = getOrCreateUser(slackUserId);
-
-        msgLog.info(`Processing voice memo from ${slackUserId} (${mimeType}, ${file.size} bytes)`);
-
-        // Get or start conversation
-        let conversation = getConversationByThread(channelId, threadTs);
-        if (!conversation) {
-          conversation = startConversation(user.id, channelId, threadTs, 'charla');
-        }
-
-        // Process voice memo
-        const audioUrl = file.url_private ?? '';
-        const botToken = process.env.SLACK_BOT_TOKEN ?? '';
-        const history: LlmMessage[] = [];
-
-        const result = await processVoiceMemo(audioUrl, botToken, history, user.level);
-
-        // Track turn
-        addTurn(conversation.id);
-
-        // Update streak and XP
-        updateStreak(user.id);
-        addXp(user.id, getXpForVoiceMemo());
-
-        // Reply with transcript + response
-        const blocks = formatVoiceResponseBlocks(result);
-        await postMessage(
-          client,
-          channelId,
-          result.response.text,
-          blocks as any[],
-          threadTs,
-        );
-
-        msgLog.info(`Voice memo processed for ${slackUserId}`);
-      } catch (err) {
-        msgLog.error(`Voice handler failed: ${err}`);
       }
     });
   });

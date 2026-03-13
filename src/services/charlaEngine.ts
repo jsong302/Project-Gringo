@@ -2,13 +2,14 @@
  * Charla Engine — LLM-powered free conversation in Argentine Spanish.
  *
  * Manages conversation context, "no entiendo" detection,
- * and English fallback explanations.
+ * English fallback explanations, and pronunciation via tool use.
  */
-import { callLlm } from './llm';
-import type { LlmMessage } from './llm';
+import { callLlm, callLlmWithTools } from './llm';
+import type { LlmMessage, ToolDefinition, ToolUseBlock, ToolResultBlock } from './llm';
 import { getPromptOrThrow, interpolate } from './prompts';
 import { log } from '../utils/logger';
 import { getSetting } from './settings';
+import { saveLearnerFact } from './learnerFacts';
 
 const charlaLog = log.withScope('charla');
 
@@ -16,9 +17,10 @@ const charlaLog = log.withScope('charla');
 
 export interface CharlaResponse {
   text: string;
-  isExplanation: boolean;  // true if this was a "no entiendo" fallback
+  isExplanation: boolean;
   inputTokens: number;
   outputTokens: number;
+  pronunciations: string[];  // phrases the LLM wants pronounced
 }
 
 // ── "No entiendo" detection ─────────────────────────────────
@@ -45,20 +47,58 @@ export function detectNoEntiendo(text: string): boolean {
   return NO_ENTIENDO_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+// ── Tools ──────────────────────────────────────────────────
+
+const PRONOUNCE_TOOL: ToolDefinition = {
+  name: 'pronounce',
+  description: 'Generate an audio pronunciation clip for a Spanish word or phrase. Use this whenever the student asks how to pronounce something, or when introducing a new word that would benefit from hearing it spoken.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      phrase: {
+        type: 'string',
+        description: 'The Spanish word or phrase to pronounce (e.g. "laburo", "¿Cómo andás?")',
+      },
+    },
+    required: ['phrase'],
+  },
+};
+
+const LOG_OBSERVATION_TOOL: ToolDefinition = {
+  name: 'log_student_observation',
+  description: 'Log an observation about the student during conversation. Call this when you notice: a grammar/vocabulary error, a topic they are interested in, a strength, a knowledge gap, or a pronunciation issue. You can call this multiple times. Always provide your conversational response alongside tool calls.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      category: {
+        type: 'string',
+        enum: ['error_pattern', 'strength', 'interest', 'preference', 'knowledge_gap', 'pronunciation'],
+        description: 'Type of observation',
+      },
+      fact: {
+        type: 'string',
+        description: 'Concise observation, e.g. "Confuses ser/estar with locations" or "Interested in football vocabulary" or "Correctly uses voseo in present tense"',
+      },
+    },
+    required: ['category', 'fact'],
+  },
+};
+
+const CHARLA_TOOLS: ToolDefinition[] = [PRONOUNCE_TOOL, LOG_OBSERVATION_TOOL];
+
 // ── Message building ────────────────────────────────────────
 
-/**
- * Build the system prompt for charla conversation.
- */
-export function buildCharlaSystemPrompt(userLevel: number): string {
+export function buildCharlaSystemPrompt(userLevel: number, memoryContext?: string): string {
   const template = getPromptOrThrow('charla_system');
-  return interpolate(template, { level: String(userLevel) });
+  let prompt = interpolate(template, { level: String(userLevel) });
+
+  if (memoryContext) {
+    prompt += `\n\n--- Learner Profile ---\n${memoryContext}\n\nUse this profile to personalize your teaching. Focus on their weaknesses, build on their strengths, and reference their interests when possible.`;
+  }
+
+  return prompt;
 }
 
-/**
- * Build the message array from conversation history.
- * History is alternating user/assistant messages.
- */
 export function buildMessages(history: Array<{ role: 'user' | 'assistant'; text: string }>): LlmMessage[] {
   return history.map((m) => ({
     role: m.role,
@@ -69,40 +109,93 @@ export function buildMessages(history: Array<{ role: 'user' | 'assistant'; text:
 // ── Core conversation ───────────────────────────────────────
 
 /**
- * Generate a charla response given conversation history.
+ * Generate a charla response with tool use (pronunciation).
  */
 export async function generateCharlaResponse(
   userMessage: string,
   conversationHistory: LlmMessage[],
   userLevel: number,
+  memoryContext?: string,
+  userId?: number,
 ): Promise<CharlaResponse> {
-  const system = buildCharlaSystemPrompt(userLevel);
+  const system = buildCharlaSystemPrompt(userLevel, memoryContext);
 
   const messages: LlmMessage[] = [
     ...conversationHistory,
     { role: 'user', content: userMessage },
   ];
 
-  const response = await callLlm({
+  const response = await callLlmWithTools({
     system,
     messages,
+    tools: CHARLA_TOOLS,
     temperature: getSetting('llm.charla_temperature', 0.8),
     maxTokens: getSetting('llm.charla_max_tokens', 512),
   });
 
-  charlaLog.debug(`Charla response: ${response.text.slice(0, 80)}...`);
+  // Process tool calls: collect pronunciations and log observations
+  const pronunciations: string[] = [];
+  let observationCount = 0;
+  const MAX_OBSERVATIONS_PER_MESSAGE = 3;
+
+  for (const toolUse of response.toolUses) {
+    if (toolUse.name === 'pronounce') {
+      const phrase = (toolUse.input as any).phrase;
+      if (phrase) pronunciations.push(phrase);
+    } else if (toolUse.name === 'log_student_observation' && userId) {
+      if (observationCount < MAX_OBSERVATIONS_PER_MESSAGE) {
+        const { category, fact } = toolUse.input as { category: string; fact: string };
+        saveLearnerFact(userId, category, fact, 'tool');
+        observationCount++;
+      }
+    }
+  }
+
+  // If there were tool calls but also text, we have our response
+  // If tool calls but no text, we need a follow-up call with tool results
+  let text = response.text;
+
+  if (response.toolUses.length > 0 && !text) {
+    // Build tool results and get the final text response
+    const toolResults: ToolResultBlock[] = response.toolUses.map((tu) => ({
+      type: 'tool_result' as const,
+      tool_use_id: tu.id,
+      content: tu.name === 'pronounce'
+        ? 'Audio pronunciation will be sent as a voice clip.'
+        : 'Observation logged.',
+    }));
+
+    const followUp = await callLlm({
+      system,
+      messages: [
+        ...messages,
+        { role: 'assistant', content: response.content as any },
+        { role: 'user', content: toolResults as any },
+      ],
+      temperature: getSetting('llm.charla_temperature', 0.8),
+      maxTokens: getSetting('llm.charla_max_tokens', 512),
+    });
+
+    text = followUp.text;
+  }
+
+  if (pronunciations.length > 0) {
+    charlaLog.info(`LLM called pronounce tool for: ${pronunciations.join(', ')}`);
+  }
+
+  charlaLog.debug(`Charla response: ${text.slice(0, 80)}...`);
 
   return {
-    text: response.text,
+    text,
     isExplanation: false,
     inputTokens: response.inputTokens,
     outputTokens: response.outputTokens,
+    pronunciations,
   };
 }
 
 /**
  * Generate an explanation when the user says "no entiendo".
- * Translates the bot's last message and explains any new vocab.
  */
 export async function generateExplanation(
   lastBotMessage: string,
@@ -132,23 +225,20 @@ Keep it brief and helpful. Mix English explanation with simple Spanish.`;
     isExplanation: true,
     inputTokens: response.inputTokens,
     outputTokens: response.outputTokens,
+    pronunciations: [],
   };
 }
 
 // ── Response with "no entiendo" handling ────────────────────
 
-/**
- * Process a user message in a charla conversation.
- * Detects "no entiendo" and handles it automatically.
- */
 export async function processCharlaMessage(
   userMessage: string,
   conversationHistory: LlmMessage[],
   userLevel: number,
+  memoryContext?: string,
+  userId?: number,
 ): Promise<CharlaResponse> {
-  // Check if user is asking for help
   if (detectNoEntiendo(userMessage)) {
-    // Find the last assistant message
     const lastBotMessage = [...conversationHistory]
       .reverse()
       .find((m) => m.role === 'assistant');
@@ -159,6 +249,5 @@ export async function processCharlaMessage(
     }
   }
 
-  // Normal conversation
-  return generateCharlaResponse(userMessage, conversationHistory, userLevel);
+  return generateCharlaResponse(userMessage, conversationHistory, userLevel, memoryContext, userId);
 }

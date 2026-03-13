@@ -231,6 +231,49 @@ CREATE TABLE IF NOT EXISTS system_settings (
 );
 
 -- ============================================================
+-- Conversation Messages (thread history for LLM context)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL REFERENCES conversation_threads(id),
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    content TEXT NOT NULL,
+    message_ts TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ============================================================
+-- Learner Facts (discrete observations, Mem0-style)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS learner_facts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    category TEXT NOT NULL CHECK (category IN ('error_pattern', 'strength', 'interest', 'preference', 'knowledge_gap', 'pronunciation', 'other')),
+    fact TEXT NOT NULL,
+    source TEXT CHECK (source IN ('tool', 'pronunciation', 'review', 'onboarding', 'system')),
+    superseded_by INTEGER REFERENCES learner_facts(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ============================================================
+-- Review Sessions (persisted SRS sessions)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS review_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    conversation_id INTEGER REFERENCES conversation_threads(id),
+    cards_json TEXT NOT NULL,
+    current_index INTEGER NOT NULL DEFAULT 0,
+    results_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'abandoned')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ============================================================
 -- Indexes
 -- ============================================================
 
@@ -246,3 +289,6 @@ CREATE INDEX IF NOT EXISTS idx_lesson_engagement_lesson ON lesson_engagement(les
 CREATE INDEX IF NOT EXISTS idx_vocabulary_category ON vocabulary(category, difficulty);
 CREATE INDEX IF NOT EXISTS idx_conjugations_verb ON conjugations(verb_infinitive);
 CREATE INDEX IF NOT EXISTS idx_phrases_category ON phrases(category, difficulty);
+CREATE INDEX IF NOT EXISTS idx_conv_messages_conv ON conversation_messages(conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_learner_facts_user ON learner_facts(user_id, category);
+CREATE INDEX IF NOT EXISTS idx_review_sessions_user ON review_sessions(user_id, status);

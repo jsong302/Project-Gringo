@@ -60,11 +60,38 @@ export interface SessionSummary {
 }
 
 // ── In-memory session store (keyed by `userId:channelId`) ───
+// Write-through cache: Map for performance, DB for persistence
 
 const activeSessions = new Map<string, ReviewSession>();
 
 function sessionKey(userId: number, channelId: string): string {
   return `${userId}:${channelId}`;
+}
+
+// ── DB persistence helpers ──────────────────────────────────
+
+function persistSession(session: ReviewSession, channelId: string): void {
+  const db = getDb();
+  db.run(
+    `INSERT INTO review_sessions (user_id, conversation_id, cards_json, current_index, results_json, status)
+     VALUES (${session.userId}, ${session.id}, '${esc(JSON.stringify(session.cards.map((c) => c.id)))}', ${session.currentIndex}, '${esc(JSON.stringify(session.results))}', '${session.status}')`,
+  );
+}
+
+function updatePersistedSession(session: ReviewSession): void {
+  const db = getDb();
+  db.run(
+    `UPDATE review_sessions
+     SET current_index = ${session.currentIndex},
+         results_json = '${esc(JSON.stringify(session.results))}',
+         status = '${session.status}',
+         updated_at = datetime('now')
+     WHERE conversation_id = ${session.id}`,
+  );
+}
+
+function esc(str: string): string {
+  return str.replace(/'/g, "''");
 }
 
 // ── Session lifecycle ───────────────────────────────────────
@@ -110,6 +137,7 @@ export function startReviewSession(
   };
 
   activeSessions.set(key, session);
+  persistSession(session, channelId);
   sessionLog.info(`Started review session: ${cards.length} cards for user ${userId}`);
   return session;
 }
@@ -176,6 +204,9 @@ export function scoreCard(
      WHERE id = ${session.id}`,
   );
 
+  // Persist session state to DB
+  updatePersistedSession(session);
+
   return result;
 }
 
@@ -203,6 +234,9 @@ export function completeSession(
      WHERE id = ${session.id}`,
   );
 
+  // Persist completed status
+  updatePersistedSession(session);
+
   const summary = getSessionSummary(session);
   activeSessions.delete(key);
 
@@ -226,6 +260,7 @@ export function abandonSession(userId: number, channelId: string): void {
      WHERE id = ${session.id}`,
   );
 
+  updatePersistedSession(session);
   activeSessions.delete(key);
   sessionLog.info(`Session abandoned for user ${userId}`);
 }
@@ -336,6 +371,62 @@ export function formatSummaryBlocks(summary: SessionSummary): object[] {
 }
 
 // ── Test helper ─────────────────────────────────────────────
+
+// ── Session recovery (on startup) ────────────────────────────
+
+/**
+ * Recover active review sessions from DB into memory.
+ * Call this once during app startup after DB is initialized.
+ */
+export function recoverSessions(): number {
+  const db = getDb();
+  const result = db.exec(
+    `SELECT rs.user_id, rs.conversation_id, rs.cards_json, rs.current_index, rs.results_json, rs.status,
+            ct.slack_channel_id
+     FROM review_sessions rs
+     JOIN conversation_threads ct ON ct.id = rs.conversation_id
+     WHERE rs.status = 'active'`,
+  );
+
+  if (!result.length) return 0;
+
+  let recovered = 0;
+  for (const row of result[0].values) {
+    const userId = row[0] as number;
+    const conversationId = row[1] as number;
+    const cardIds = JSON.parse(row[2] as string) as number[];
+    const currentIndex = row[3] as number;
+    const results = JSON.parse(row[4] as string) as ReviewResult[];
+    const channelId = row[6] as string;
+
+    // Reload actual card objects from DB
+    const cards: SrsCard[] = [];
+    for (const cardId of cardIds) {
+      const card = getCardById(cardId);
+      if (card) cards.push(card);
+    }
+
+    if (cards.length === 0) continue;
+
+    const session: ReviewSession = {
+      id: conversationId,
+      userId,
+      cards,
+      currentIndex,
+      results,
+      status: 'active',
+    };
+
+    const key = sessionKey(userId, channelId);
+    activeSessions.set(key, session);
+    recovered++;
+  }
+
+  if (recovered > 0) {
+    sessionLog.info(`Recovered ${recovered} active review sessions from DB`);
+  }
+  return recovered;
+}
 
 /** @internal — test-only: clear all in-memory sessions */
 export function _clearSessions(): void {

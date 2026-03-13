@@ -15,6 +15,8 @@ import { runAdminAgent } from '../services/adminAgent';
 import { getOrCreateUser } from '../services/userService';
 import type { LlmMessage } from '../services/llm';
 import { respondEphemeral, postMessage } from '../utils/slackHelpers';
+import { generatePronunciationAudio } from '../services/pronunciation';
+import { uploadAudioToSlack } from '../utils/slackAudio';
 
 const adminLog = log.withScope('admin-handler');
 
@@ -50,7 +52,7 @@ export function clearAdminHistory(slackUserId: string): void {
 async function runAgentForAdmin(
   slackUserId: string,
   message: string,
-): Promise<{ response: string; toolInfo: string }> {
+): Promise<{ response: string; toolInfo: string; toolCalls: Array<{ name: string; input: Record<string, unknown>; result: string }> }> {
   const user = getOrCreateUser(slackUserId);
   const history = getHistory(slackUserId);
   const result = await runAdminAgent(message, history, user.id);
@@ -63,7 +65,7 @@ async function runAgentForAdmin(
 
   adminLog.info(`Admin response: ${result.turns} turns, ${result.toolCalls.length} tools, ${result.totalInputTokens + result.totalOutputTokens} tokens`);
 
-  return { response: result.response, toolInfo };
+  return { response: result.response, toolInfo, toolCalls: result.toolCalls };
 }
 
 // ── Slash command handler ───────────────────────────────────
@@ -111,7 +113,7 @@ export async function handleAdmin(
   adminLog.info(`Admin command from ${slackUserId}: ${trimmed.slice(0, 100)}`);
 
   try {
-    const { response, toolInfo } = await runAgentForAdmin(slackUserId, trimmed);
+    const { response, toolInfo, toolCalls } = await runAgentForAdmin(slackUserId, trimmed);
 
     const blocks: any[] = [
       { type: 'section', text: { type: 'mrkdwn', text: response } },
@@ -122,6 +124,12 @@ export async function handleAdmin(
         type: 'context',
         elements: [{ type: 'mrkdwn', text: `_${toolInfo}_` }],
       });
+    }
+
+    // Pronunciation audio can't be sent via ephemeral response
+    const pronounceCalls = toolCalls.filter((tc) => tc.name === 'pronounce');
+    if (pronounceCalls.length > 0) {
+      adminLog.info(`Skipping ${pronounceCalls.length} pronunciation clip(s) in slash command (ephemeral response — use DM instead)`);
     }
 
     await respond({
@@ -167,7 +175,7 @@ export async function handleAdminDm(
   }
 
   try {
-    const { response, toolInfo } = await runAgentForAdmin(slackUserId, message);
+    const { response, toolInfo, toolCalls } = await runAgentForAdmin(slackUserId, message);
 
     const blocks: any[] = [
       { type: 'section', text: { type: 'mrkdwn', text: response } },
@@ -181,6 +189,27 @@ export async function handleAdminDm(
     }
 
     await postMessage(client, channelId, response, blocks, threadTs);
+
+    // Generate and upload pronunciation audio for any pronounce tool calls
+    const pronounceCalls = toolCalls.filter((tc) => tc.name === 'pronounce');
+    if (pronounceCalls.length > 0) {
+      const phrases = pronounceCalls.map((tc) => tc.input.phrase as string);
+      try {
+        adminLog.info(`Generating pronunciation audio for: ${phrases.map((p) => `"${p}"`).join(', ')}`);
+        const audioBuffers = await generatePronunciationAudio(phrases);
+        for (let i = 0; i < phrases.length; i++) {
+          const buf = audioBuffers[i];
+          if (buf) {
+            await uploadAudioToSlack(client, channelId, buf, phrases[i], threadTs);
+          } else {
+            adminLog.warn(`No audio generated for "${phrases[i]}"`);
+          }
+        }
+      } catch (audioErr) {
+        const audioMsg = audioErr instanceof Error ? audioErr.message : String(audioErr);
+        adminLog.error(`Failed to generate/upload pronunciation audio: ${audioMsg}`);
+      }
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     adminLog.error(`Admin DM agent failed: ${msg}`);

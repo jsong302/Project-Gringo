@@ -84,7 +84,32 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
           '`/gringo stats` — Your streak, words learned, and progress',
           '`/gringo repaso` — Start a review session',
           '`/gringo onboard` — Re-send the welcome DM',
+          '`/gringo notifications` — Manage notification preferences',
+          '`/gringo desafio` — Find a partner for dialogue practice',
+          '`/gringo desafio @user` — Challenge someone directly',
           '`/gringo admin <message>` — Admin agent (admins only)',
+        ].join('\n'),
+      },
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '*Voice Memos*',
+      },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: [
+          'Send voice memos to practice speaking and get pronunciation feedback!',
+          '',
+          '*Desktop:* Click the *+* button in the message field → *Record audio clip*',
+          '*Mobile:* Tap and hold the microphone icon in the message field',
+          '',
+          'Send a voice memo with the text "check my pronunciation" to get detailed feedback on your accent, grammar, and word choice.',
         ].join('\n'),
       },
     },

@@ -77,6 +77,9 @@ export function getRunningJobNames(): string[] {
 export function createDefaultJobs(handlers: {
   postDailyLesson: () => Promise<void>;
   postLunfardoDelDia: () => Promise<void>;
+  sendSrsReminders?: () => Promise<void>;
+  closeStaleThreads?: () => Promise<void>;
+  sendOnboardingFollowUp?: () => Promise<void>;
 }): ScheduledJob[] {
   let dailyLessonSchedule = '0 9 * * 1-5';
   let lunfardoSchedule = '0 12 * * *';
@@ -89,7 +92,7 @@ export function createDefaultJobs(handlers: {
     // Settings not available yet — use defaults
   }
 
-  return [
+  const jobs: ScheduledJob[] = [
     {
       name: 'daily-lesson',
       schedule: dailyLessonSchedule,
@@ -101,4 +104,30 @@ export function createDefaultJobs(handlers: {
       handler: handlers.postLunfardoDelDia,
     },
   ];
+
+  if (handlers.sendSrsReminders) {
+    jobs.push({
+      name: 'srs-reminders',
+      schedule: '0 10 * * *', // 10 AM daily
+      handler: handlers.sendSrsReminders,
+    });
+  }
+
+  if (handlers.closeStaleThreads) {
+    jobs.push({
+      name: 'stale-thread-cleanup',
+      schedule: '0 3 * * *', // 3 AM daily
+      handler: handlers.closeStaleThreads,
+    });
+  }
+
+  if (handlers.sendOnboardingFollowUp) {
+    jobs.push({
+      name: 'onboarding-follow-up',
+      schedule: '0 * * * *', // Every hour
+      handler: handlers.sendOnboardingFollowUp,
+    });
+  }
+
+  return jobs;
 }

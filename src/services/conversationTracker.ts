@@ -138,6 +138,67 @@ export function getUserConversationHistory(
   return result[0].values.map(rowToConversation);
 }
 
+// ── Message storage ─────────────────────────────────────────
+
+export function saveMessage(
+  conversationId: number,
+  role: 'user' | 'assistant',
+  content: string,
+  messageTs?: string,
+): void {
+  const db = getDb();
+  db.run(
+    `INSERT INTO conversation_messages (conversation_id, role, content, message_ts)
+     VALUES (${conversationId}, '${role}', '${esc(content)}', ${messageTs ? `'${esc(messageTs)}'` : 'NULL'})`,
+  );
+}
+
+export function getMessages(
+  conversationId: number,
+  limit = 20,
+): Array<{ role: 'user' | 'assistant'; content: string }> {
+  const db = getDb();
+  const result = db.exec(
+    `SELECT role, content FROM conversation_messages
+     WHERE conversation_id = ${conversationId}
+     ORDER BY created_at DESC LIMIT ${limit}`,
+  );
+  if (!result.length) return [];
+  // Reverse to get chronological order (we SELECTed DESC for the LIMIT)
+  return result[0].values.reverse().map((row) => ({
+    role: row[0] as 'user' | 'assistant',
+    content: row[1] as string,
+  }));
+}
+
+// ── Stale thread cleanup ────────────────────────────────────
+
+/**
+ * Close conversations that have been active for longer than maxAgeHours.
+ * Returns the number of conversations closed.
+ */
+export function closeStaleConversations(maxAgeHours = 24): number {
+  const db = getDb();
+  const result = db.exec(
+    `SELECT COUNT(*) FROM conversation_threads
+     WHERE status = 'active'
+       AND updated_at < datetime('now', '-${maxAgeHours} hours')`,
+  );
+  const count = (result[0]?.values[0]?.[0] as number) ?? 0;
+
+  if (count > 0) {
+    db.run(
+      `UPDATE conversation_threads
+       SET status = 'completed', updated_at = datetime('now')
+       WHERE status = 'active'
+         AND updated_at < datetime('now', '-${maxAgeHours} hours')`,
+    );
+    convLog.info(`Closed ${count} stale conversations (older than ${maxAgeHours}h)`);
+  }
+
+  return count;
+}
+
 // ── Row mapper ──────────────────────────────────────────────
 
 function rowToConversation(row: unknown[]): Conversation {

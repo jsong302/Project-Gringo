@@ -60,11 +60,19 @@ export async function downloadSlackAudio(
 
 // ── Deepgram transcription (exported for testing) ───────────
 
+export interface WordInfo {
+  word: string;
+  confidence: number;
+  start: number;
+  end: number;
+}
+
 export interface TranscriptionResult {
   transcript: string;
   confidence: number;
   durationSec: number;
   language: string;
+  words: WordInfo[];
 }
 
 export function parseDeepgramResponse(body: any): TranscriptionResult {
@@ -78,11 +86,19 @@ export function parseDeepgramResponse(body: any): TranscriptionResult {
     });
   }
 
+  const words: WordInfo[] = (alt.words ?? []).map((w: any) => ({
+    word: w.word ?? w.punctuated_word ?? '',
+    confidence: w.confidence ?? 0,
+    start: w.start ?? 0,
+    end: w.end ?? 0,
+  }));
+
   return {
     transcript: alt.transcript,
     confidence: alt.confidence ?? 0,
     durationSec: body.metadata?.duration ?? 0,
     language: body.results?.channels?.[0]?.detected_language ?? 'es',
+    words,
   };
 }
 
@@ -97,6 +113,7 @@ export async function sendToDeepgram(
     language: 'es',
     punctuate: 'true',
     smart_format: 'true',
+    words: 'true',
   });
 
   const response = await withTimeout(
@@ -104,7 +121,7 @@ export async function sendToDeepgram(
       method: 'POST',
       headers: {
         Authorization: `Token ${deepgramApiKey}`,
-        'Content-Type': 'audio/webm',
+        'Content-Type': 'audio/*',
       },
       body: new Uint8Array(audioBuffer),
     }),

@@ -11,6 +11,7 @@ import { callLlm } from './llm';
 import { getRecentErrors, getErrorSummary } from './errorTracker';
 import { getUserCardStats } from './srsRepository';
 import { getUserById } from './userService';
+import { getLearnerFacts } from './learnerFacts';
 import { log } from '../utils/logger';
 
 const memLog = log.withScope('memory');
@@ -98,6 +99,15 @@ export function buildMemoryContext(userId: number): string {
       if (err.userSaid) line += ` (said: "${err.userSaid}")`;
       if (err.correction) line += ` → ${err.correction}`;
       parts.push(line);
+    }
+  }
+
+  // Include learner facts from tool-based observation
+  const facts = getLearnerFacts(userId, 30);
+  if (facts.length > 0) {
+    parts.push('Observed facts:');
+    for (const f of facts) {
+      parts.push(`- [${f.category}] ${f.fact}`);
     }
   }
 

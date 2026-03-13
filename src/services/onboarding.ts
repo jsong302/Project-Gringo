@@ -139,6 +139,8 @@ export function buildVoiceTutorialBlocks(): Record<string, unknown>[] {
           '3. Release to send',
           '',
           "I'll listen to your audio, transcribe it, and give you feedback on pronunciation and grammar.",
+          '',
+          '*Tip:* Add the text "check my pronunciation" when sending a voice memo to get detailed pronunciation feedback with audio demos of words you need to work on.',
         ].join('\n'),
       },
     },
