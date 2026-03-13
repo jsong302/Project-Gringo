@@ -94,7 +94,11 @@ const BASE_TOOLS: ToolDefinition[] = [PRONOUNCE_TOOL, LOG_OBSERVATION_TOOL, UPDA
 /** Get the tool set for this user — base tools + admin tools if they're an admin. */
 function getToolsForUser(slackUserId?: string): ToolDefinition[] {
   if (slackUserId && isAdmin(slackUserId)) {
-    return [...BASE_TOOLS, ...ADMIN_TOOL_DEFINITIONS];
+    // Admin tools may duplicate base tool names (e.g. 'pronounce') — deduplicate,
+    // preferring the base tool definition.
+    const baseNames = new Set(BASE_TOOLS.map((t) => t.name));
+    const uniqueAdminTools = ADMIN_TOOL_DEFINITIONS.filter((t) => !baseNames.has(t.name));
+    return [...BASE_TOOLS, ...uniqueAdminTools];
   }
   return BASE_TOOLS;
 }
