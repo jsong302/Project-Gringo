@@ -83,8 +83,8 @@ function selectQuestions(claimedLevel: number): PlacementQuestion[] {
 
   for (let level = 1; level <= claimedLevel; level++) {
     const levelQuestions = QUESTION_POOL.filter((q) => q.level === level);
-    // Pick 2-3 questions per level
-    const count = level <= 2 ? 2 : 3;
+    // Pick 5 questions per level for a more reliable assessment
+    const count = 5;
     const shuffled = [...levelQuestions].sort(() => Math.random() - 0.5);
     selected.push(...shuffled.slice(0, count));
   }
@@ -210,7 +210,7 @@ function calculatePlacement(state: PlacementState): PlacementCalc {
   for (let level = 1; level <= 4; level++) {
     const scores = levelScores.get(level);
     if (!scores) continue;
-    if (scores.correct / scores.total >= 0.5) {
+    if (scores.correct / scores.total >= 0.6) {
       passedLevels.push(level);
     } else {
       failedLevels.push(level);
@@ -428,161 +428,304 @@ export function formatPlacementResultBlocks(unitOrder: number, level: number, co
 // ── Question Pool ───────────────────────────────────────────
 
 const QUESTION_POOL: PlacementQuestion[] = [
-  // ── Level 1 (6 questions) ──
+  // ── Level 1: Greetings, numbers, ser/estar, basic present tense (12 questions) ──
   {
     id: 'L1_01', level: 1,
     question: 'How do you say "Hello, how are you?" in Argentine Spanish?',
-    options: ['Hola, ¿cómo andás?', 'Adiós, ¿qué tal?', 'Buenos días, ¿cómo estás tú?', 'Hola, ¿qué hora es?'],
+    options: ['Hola, ¿cómo andás?', 'Hola, ¿cómo estás tú?', 'Hola, ¿qué hora es?'],
     correctIndex: 0,
   },
   {
     id: 'L1_02', level: 1,
-    question: 'What does "Me llamo Juan" mean?',
-    options: ['I called Juan', 'My name is Juan', 'I like Juan', 'Juan called me'],
+    question: '"Soy de Estados Unidos" — which verb is "soy" a form of?',
+    options: ['estar', 'ser', 'ir', 'saber'],
     correctIndex: 1,
   },
   {
     id: 'L1_03', level: 1,
-    question: 'Which is the correct way to say "I am from the United States"?',
-    options: ['Estoy de Estados Unidos', 'Soy de Estados Unidos', 'Tengo de Estados Unidos', 'Voy de Estados Unidos'],
+    question: 'Which sentence correctly uses "estar"?',
+    options: ['Estoy profesor', 'Estoy contento', 'Estoy de Argentina', 'Estoy Juan'],
     correctIndex: 1,
   },
   {
     id: 'L1_04', level: 1,
-    question: 'How do you say "the bill, please" at a restaurant?',
-    options: ['La mesa, por favor', 'La cuenta, por favor', 'El menú, por favor', 'La comida, por favor'],
+    question: 'How do you say "15" in Spanish?',
+    options: ['Cincuenta', 'Quince', 'Cinco', 'Catorce'],
     correctIndex: 1,
   },
   {
     id: 'L1_05', level: 1,
-    question: 'What does "¿Dónde queda la iglesia?" mean?',
-    options: ['Where is the church?', 'When is the church?', 'What is the church?', 'Why is the church?'],
+    question: '"Ella habla español" means:',
+    options: ['She speaks Spanish', 'She spoke Spanish', 'She will speak Spanish', 'She is Spanish'],
     correctIndex: 0,
   },
   {
     id: 'L1_06', level: 1,
-    question: '"Estoy cansado" means:',
-    options: ['I am married', 'I am tired', 'I am hungry', 'I am happy'],
-    correctIndex: 1,
-  },
-
-  // ── Level 2 (7 questions) ──
-  {
-    id: 'L2_01', level: 2,
-    question: 'In Argentine Spanish, "vos hablás" means the same as:',
-    options: ['yo hablo', 'tú hablas', 'él habla', 'nosotros hablamos'],
+    question: 'Complete: "Nosotros _____ estudiantes" (We are students)',
+    options: ['estamos', 'somos', 'tenemos', 'vamos'],
     correctIndex: 1,
   },
   {
-    id: 'L2_02', level: 2,
-    question: 'What is the correct past tense? "Ayer yo _____ a la iglesia" (ir)',
-    options: ['iba', 'fui', 'voy', 'iré'],
+    id: 'L1_07', level: 1,
+    question: '"¿Cuánto cuesta?" means:',
+    options: ['What time is it?', 'How much does it cost?', 'Where is it?', 'Who is it?'],
     correctIndex: 1,
   },
   {
-    id: 'L2_03', level: 2,
-    question: '"¿Cómo te sentís?" is asking about your:',
-    options: ['Name', 'Age', 'Feelings', 'Location'],
+    id: 'L1_08', level: 1,
+    question: 'Which word means "but"?',
+    options: ['porque', 'pero', 'para', 'por'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L1_09', level: 1,
+    question: '"La iglesia está cerca" — "cerca" means:',
+    options: ['closed', 'far', 'nearby', 'open'],
     correctIndex: 2,
   },
   {
-    id: 'L2_04', level: 2,
+    id: 'L1_10', level: 1,
+    question: 'Complete: "Yo _____ agua" (I drink water)',
+    options: ['como', 'bebo', 'leo', 'abro'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L1_11', level: 1,
+    question: 'What does "No entiendo" mean?',
+    options: ['I don\'t know', 'I don\'t understand', 'I don\'t want', 'I don\'t have'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L1_12', level: 1,
+    question: '"Mi hermano tiene veinte años" — what does "tiene" mean here?',
+    options: ['has (age)', 'is', 'wants', 'holds'],
+    correctIndex: 0,
+  },
+
+  // ── Level 2: Past tense, voseo basics, daily vocabulary (12 questions) ──
+  {
+    id: 'L2_01', level: 2,
+    question: 'What is the vos form of "hablar" in present tense?',
+    options: ['hablás', 'hablas', 'hablés', 'habláis'],
+    correctIndex: 0,
+  },
+  {
+    id: 'L2_02', level: 2,
+    question: '"Ayer fui a la iglesia" — which tense is "fui"?',
+    options: ['Present', 'Imperfect', 'Preterite', 'Future'],
+    correctIndex: 2,
+  },
+  {
+    id: 'L2_03', level: 2,
     question: 'Which sentence uses the imperfect tense correctly?',
-    options: ['Ayer comí pizza', 'Cuando era chico, jugaba al fútbol', 'Mañana voy a correr', 'Hoy estoy contento'],
+    options: ['Ayer comí pizza', 'De chico, siempre jugaba al fútbol', 'Mañana voy a correr', 'Hoy comí mucho'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L2_04', level: 2,
+    question: 'The vos imperative of "venir" is:',
+    options: ['ven', 'vení', 'venís', 'viene'],
     correctIndex: 1,
   },
   {
     id: 'L2_05', level: 2,
-    question: '"Dios te bendiga" means:',
-    options: ['God bless you', 'God is great', 'God loves you', 'God is here'],
-    correctIndex: 0,
+    question: '"Ella se levantó temprano" means:',
+    options: ['She went to bed early', 'She got up early', 'She left early', 'She arrived early'],
+    correctIndex: 1,
   },
   {
     id: 'L2_06', level: 2,
-    question: 'What is the vos form of "tener" (present tense)?',
-    options: ['Tienes', 'Tenés', 'Tiene', 'Tengo'],
+    question: 'Complete: "Cuando era chico, _____ mucho" (used to read a lot)',
+    options: ['leí', 'leía', 'leo', 'leeré'],
     correctIndex: 1,
   },
   {
     id: 'L2_07', level: 2,
-    question: '"Mandame un mensaje" means:',
-    options: ['Give me a gift', 'Send me a message', 'Tell me a story', 'Leave me alone'],
+    question: 'What is the vos form of "poder" (present)?',
+    options: ['puedes', 'podés', 'puede', 'podéis'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L2_08', level: 2,
+    question: '"¿Ya comiste?" — what is being asked?',
+    options: ['Are you cooking?', 'Did you eat already?', 'Do you want to eat?', 'What did you cook?'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L2_09', level: 2,
+    question: 'Which is the correct preterite? "Ellos _____ a Buenos Aires" (ir)',
+    options: ['iban', 'fueron', 'van', 'irán'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L2_10', level: 2,
+    question: '"Contame qué pasó" — "contame" uses which form?',
+    options: ['tú imperative', 'vos imperative', 'usted imperative', 'subjunctive'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L2_11', level: 2,
+    question: 'Preterite vs imperfect: "_____ las 8 cuando _____ a llover"',
+    options: ['Fueron / empezó', 'Eran / empezó', 'Fueron / empezaba', 'Son / empezó'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L2_12', level: 2,
+    question: '"Le pedí plata prestada" means:',
+    options: ['I lent him money', 'I asked him to borrow money', 'I paid him money', 'I found his money'],
     correctIndex: 1,
   },
 
-  // ── Level 3 (6 questions) ──
+  // ── Level 3: Subjunctive, lunfardo, opinions, indirect speech (12 questions) ──
   {
     id: 'L3_01', level: 3,
-    question: 'What does "laburo" mean in lunfardo?',
-    options: ['Food', 'Money', 'Work', 'Party'],
-    correctIndex: 2,
+    question: 'Which correctly uses the subjunctive?',
+    options: ['Quiero que vengas', 'Quiero que venís', 'Quiero que vienes', 'Quiero que vas a venir'],
+    correctIndex: 0,
   },
   {
     id: 'L3_02', level: 3,
-    question: 'Which sentence correctly uses the subjunctive?',
-    options: ['Quiero que venís', 'Quiero que vengas', 'Quiero que vienes', 'Quiero que viniste'],
-    correctIndex: 1,
+    question: '"Laburo" in lunfardo means:',
+    options: ['sleep', 'food', 'work', 'money'],
+    correctIndex: 2,
   },
   {
     id: 'L3_03', level: 3,
-    question: '"Me parece que tenés razón" expresses:',
-    options: ['A command', 'An opinion', 'A question', 'A complaint'],
+    question: 'Complete: "Ojalá que _____ buen tiempo mañana" (I hope the weather is nice)',
+    options: ['hace', 'haga', 'hiciera', 'haría'],
     correctIndex: 1,
   },
   {
     id: 'L3_04', level: 3,
-    question: 'What does "pibe" mean?',
-    options: ['Old man', 'Kid/guy', 'Boss', 'Friend'],
-    correctIndex: 1,
+    question: '"No creo que sea cierto" — why is "sea" subjunctive here?',
+    options: ['It follows a negated belief/opinion', 'It\'s a question', 'It\'s past tense', 'It\'s a command'],
+    correctIndex: 0,
   },
   {
     id: 'L3_05', level: 3,
-    question: 'In Argentine mate culture, saying "gracias" when passed the mate means:',
-    options: ['Thank you, give me more', 'I appreciate the mate', 'No more for me, thanks', 'It tastes great'],
+    question: '"Me copa esa idea" means:',
+    options: ['I hate that idea', 'That idea confuses me', 'I\'m really into that idea', 'That idea is mine'],
     correctIndex: 2,
   },
   {
     id: 'L3_06', level: 3,
-    question: '"Si pudiera, viajaría a Argentina" uses which tenses?',
-    options: ['Present + Future', 'Past subjunctive + Conditional', 'Imperfect + Preterite', 'Present + Imperfect'],
+    question: 'In Argentine mate culture, saying "gracias" when passed the mate means:',
+    options: ['Pour me more', 'I appreciate the flavor', 'No more for me', 'It needs more sugar'],
+    correctIndex: 2,
+  },
+  {
+    id: 'L3_07', level: 3,
+    question: 'Complete: "Es importante que todos _____ a tiempo" (arrive)',
+    options: ['llegan', 'lleguen', 'llegaron', 'llegarán'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L3_08', level: 3,
+    question: '"Afanar" in lunfardo means:',
+    options: ['to work hard', 'to steal', 'to run', 'to eat'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L3_09', level: 3,
+    question: '"Me dijo que vendría" uses:',
+    options: ['Present + Future', 'Preterite + Conditional', 'Imperfect + Subjunctive', 'Present + Subjunctive'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L3_10', level: 3,
+    question: '"Estoy al pedo" means:',
+    options: ['I\'m angry', 'I\'m busy', 'I\'m doing nothing / bored', 'I\'m drunk'],
+    correctIndex: 2,
+  },
+  {
+    id: 'L3_11', level: 3,
+    question: 'Complete: "Dudo que él _____ la verdad" (saber)',
+    options: ['sabe', 'sepa', 'sabía', 'supiera'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L3_12', level: 3,
+    question: '"Morfi" in lunfardo means:',
+    options: ['death', 'food', 'sleep', 'party'],
     correctIndex: 1,
   },
 
-  // ── Level 4 (6 questions) ──
+  // ── Level 4: Complex grammar, vesre, idioms, advanced lunfardo (12 questions) ──
   {
     id: 'L4_01', level: 4,
-    question: 'What is "feca" in vesre?',
-    options: ['Face', 'Café', 'Fake', 'Fence'],
+    question: '"Feca" in vesre is:',
+    options: ['face', 'café', 'fake', 'faith'],
     correctIndex: 1,
   },
   {
     id: 'L4_02', level: 4,
     question: '"Si hubiera sabido, habría ido" means:',
-    options: ['If I knew, I would go', 'If I had known, I would have gone', 'If I know, I will go', 'When I found out, I went'],
+    options: ['If I knew, I would go', 'If I had known, I would have gone', 'When I found out, I went', 'If I know, I\'ll go'],
     correctIndex: 1,
   },
   {
     id: 'L4_03', level: 4,
-    question: '"Está al horno" means someone is:',
-    options: ['Cooking dinner', 'In big trouble', 'Very hot', 'At the bakery'],
+    question: '"Está al horno" means:',
+    options: ['He\'s cooking', 'He\'s in big trouble', 'He\'s very hot', 'He\'s at the bakery'],
     correctIndex: 1,
   },
   {
     id: 'L4_04', level: 4,
-    question: 'What does "hacerse el boludo" mean?',
-    options: ['To get angry', 'To play dumb', 'To be brave', 'To be generous'],
+    question: '"Hacerse el boludo" means:',
+    options: ['To get angry', 'To play dumb/pretend not to notice', 'To be brave', 'To act crazy'],
     correctIndex: 1,
   },
   {
     id: 'L4_05', level: 4,
-    question: '"Bardear" in lunfardo means:',
-    options: ['To sing', 'To disrespect/cause trouble', 'To dance', 'To celebrate'],
-    correctIndex: 1,
+    question: 'Complete: "Si _____ más tiempo, habría terminado el proyecto"',
+    options: ['tenía', 'tuve', 'hubiera tenido', 'tendría'],
+    correctIndex: 2,
   },
   {
     id: 'L4_06', level: 4,
-    question: 'Which is a correct use of the past subjunctive?',
-    options: ['Ojalá que lloviera mañana', 'Ojalá que llueve mañana', 'Ojalá que lloverá mañana', 'Ojalá que llovió mañana'],
+    question: '"Garpa" in lunfardo means:',
+    options: ['It\'s expensive', 'It\'s worth it / pays off', 'It\'s broken', 'It\'s ugly'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L4_07', level: 4,
+    question: '"Jermu" in vesre is:',
+    options: ['hermano', 'mujer', 'mejor', 'germán'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L4_08', level: 4,
+    question: 'Which uses the pluperfect subjunctive correctly?',
+    options: [
+      'Si hubiéramos llegado antes, habríamos conseguido lugar',
+      'Si llegaramos antes, consiguiéramos lugar',
+      'Si habíamos llegado antes, conseguimos lugar',
+      'Si llegamos antes, habríamos conseguido lugar',
+    ],
     correctIndex: 0,
+  },
+  {
+    id: 'L4_09', level: 4,
+    question: '"Flashear" means:',
+    options: ['To take a photo', 'To imagine/hallucinate/be delusional', 'To run fast', 'To get angry'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L4_10', level: 4,
+    question: '"Le re cabió" means:',
+    options: ['He really liked it', 'He really deserved it / got what was coming', 'He really understood', 'He really tried hard'],
+    correctIndex: 1,
+  },
+  {
+    id: 'L4_11', level: 4,
+    question: 'Complete: "No habría pasado si vos no _____ eso"',
+    options: ['dijiste', 'decías', 'hubieras dicho', 'dirías'],
+    correctIndex: 2,
+  },
+  {
+    id: 'L4_12', level: 4,
+    question: '"Rescatate" in Argentine slang means:',
+    options: ['Save yourself', 'Calm down / get a grip', 'Run away', 'Help me'],
+    correctIndex: 1,
   },
 ];
