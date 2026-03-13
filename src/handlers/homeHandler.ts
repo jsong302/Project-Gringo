@@ -271,6 +271,11 @@ function buildLessonView(slackUserId: string, state: HomeSessionState): Record<s
         },
         {
           type: 'button',
+          text: { type: 'plain_text', text: ':books: Back to Curriculum' },
+          action_id: 'home_view_curriculum',
+        },
+        {
+          type: 'button',
           text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Dashboard' },
           action_id: 'home_back_dashboard',
         },
@@ -359,6 +364,11 @@ function buildGradeView(slackUserId: string, state: HomeSessionState): Record<st
           type: 'button',
           text: { type: 'plain_text', text: ':microphone: Send voice memo in DMs' },
           action_id: 'home_voice_hint',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: ':books: Back to Curriculum' },
+          action_id: 'home_view_curriculum',
         },
         {
           type: 'button',
