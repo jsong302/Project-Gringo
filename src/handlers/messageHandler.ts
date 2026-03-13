@@ -28,7 +28,7 @@ import { isAdminDm, handleAdminDm } from './adminHandler';
 const msgLog = log.withScope('message-handler');
 
 // Cache the bot's own user ID so we can detect @mentions
-let botUserId: string | null = null;
+let botUserId = '';
 
 async function getBotUserId(client: any): Promise<string> {
   if (botUserId) return botUserId;
