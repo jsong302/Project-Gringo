@@ -164,7 +164,6 @@ export function buildChannelGuideBlocks(): Record<string, unknown>[] {
       text: {
         type: 'mrkdwn',
         text: [
-          '`#charla-libre` — Free conversation with me in Spanish. Send text or voice and I\'ll respond.',
           '`#daily-lesson` — Monday to Friday at 9am, a new lesson.',
           '`#lunfardo-del-dia` — Every day at noon, a new lunfardo (slang) word.',
           '`#repaso` — Spaced repetition flashcards (SRS) to memorize vocabulary.',
@@ -215,7 +214,7 @@ export function buildFirstExerciseBlocks(level: number): Record<string, unknown>
           '',
           `_${exercise.hint}_`,
           '',
-          'Reply with text or a voice memo in `#charla-libre`. Give it a try!',
+          'Reply right here with text or a voice memo. Give it a try!',
         ].join('\n'),
       },
     },

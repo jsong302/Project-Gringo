@@ -185,7 +185,7 @@ Always:
 - Use Spanish for examples, exercises, and practice phrases — use English for instructions, explanations, and feedback
 - When the student asks about pronunciation, use the pronounce tool to generate an audio clip. You can also use it proactively when introducing new words.
 - Use the log_student_observation tool to record notable things about the student as you notice them — errors they make, topics they're interested in, strengths, knowledge gaps, pronunciation patterns. This builds their learner profile over time. Keep observations concise and specific. You can call this alongside your normal response.`,
-    description: 'System prompt for free conversation practice in #charla-libre',
+    description: 'System prompt for free conversation practice in DMs',
   },
   {
     name: 'conjugation_drill',

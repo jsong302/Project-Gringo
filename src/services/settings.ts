@@ -169,7 +169,7 @@ export const DEFAULT_SETTINGS: Array<{ key: string; value: unknown; description:
   { key: 'content.new_cards_per_day', value: 5, description: 'Max new SRS cards introduced per user per day' },
 
   // Channels
-  { key: 'channels.charla', value: '', description: 'Slack channel ID for #charla-libre (empty = respond everywhere)' },
+  { key: 'channels.charla', value: '', description: 'Slack channel ID for charla (empty = DMs + @mentions anywhere)' },
   { key: 'channels.lessons', value: '', description: 'Slack channel ID for #daily-lesson' },
   { key: 'channels.lunfardo', value: '', description: 'Slack channel ID for #lunfardo-del-dia' },
   { key: 'channels.repaso', value: '', description: 'Slack channel ID for #repaso' },

@@ -59,10 +59,11 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
         type: 'mrkdwn',
         text: [
           '`#daily-lesson` — Daily lesson: vocab, grammar, culture, and a voice exercise (Mon-Fri)',
-          '`#charla-libre` — Free conversation with the bot in Argentine Spanish',
           '`#lunfardo-del-dia` — A new lunfardo (slang) word every day with etymology',
           '`#repaso` — Spaced repetition review sessions (SRS flashcards)',
           '`#desafios` — Pair practice with dialogue scenarios',
+          '',
+          '_DM me anytime for free conversation practice in Argentine Spanish!_',
         ].join('\n'),
       },
     },
