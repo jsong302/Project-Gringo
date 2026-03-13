@@ -126,6 +126,22 @@ export function registerOnboardingHandlers(app: App): void {
     }
   });
 
+  // Listen for users joining a channel the bot is in
+  app.event('member_joined_channel', async ({ event, client }) => {
+    const slackUserId = (event as any).user;
+    if (!slackUserId) return;
+
+    try {
+      const user = getOrCreateUser(slackUserId);
+      if (user.onboarded) return;
+
+      onboardLog.info(`User ${slackUserId} joined channel — sending onboarding DM`);
+      await sendWelcomeDm(client, slackUserId);
+    } catch (err) {
+      onboardLog.error(`Channel-join onboard failed for ${slackUserId}: ${err}`);
+    }
+  });
+
   // Level picker button actions (onboard_level_1 through onboard_level_5)
   for (let level = 1; level <= 5; level++) {
     app.action(`onboard_level_${level}`, async ({ ack, body, client }) => {
