@@ -58,6 +58,8 @@ export interface GradeResult {
   feedback: string;
   errors: string[];
   correction: string;
+  /** False if the student's message was not an exercise attempt (e.g. a question or navigation request) */
+  isAttempt: boolean;
 }
 
 // ── Row mapper ──────────────────────────────────────────────
@@ -470,7 +472,7 @@ export async function gradeExerciseResponse(
     system: systemPrompt,
     messages: [{
       role: 'user',
-      content: `Exercise given:\n${exerciseText}\n\nStudent's response${inputMode === 'voice' ? ' (spoken via voice memo, transcribed below)' : ''}:\n${studentResponse}\n\nGrade this response. Return JSON: {"score": 0-5, "passed": boolean, "feedback": "string", "errors": ["string"]}`,
+      content: `Exercise given:\n${exerciseText}\n\nStudent's response${inputMode === 'voice' ? ' (spoken via voice memo, transcribed below)' : ''}:\n${studentResponse}\n\nGrade this response. Return JSON: {"isAttempt": boolean, "score": 0-5, "passed": boolean, "feedback": "string", "errors": ["string"]}\n\nIMPORTANT: If the student's response is NOT an exercise attempt (e.g. they're asking a question, requesting help, navigating, or chatting), set "isAttempt": false and score: 0. Only grade actual translation/answer attempts.`,
     }],
     temperature: 0.3,
     maxTokens: 512,
@@ -484,6 +486,7 @@ export async function gradeExerciseResponse(
     const parsed = JSON.parse(cleaned);
 
     return {
+      isAttempt: parsed.isAttempt !== false, // default true unless explicitly false
       score: Math.max(0, Math.min(5, parsed.score ?? 0)),
       passed: parsed.passed ?? (parsed.score >= unit.passThreshold),
       feedback: parsed.feedback ?? 'No feedback provided.',
@@ -493,6 +496,7 @@ export async function gradeExerciseResponse(
   } catch {
     delLog.warn('Failed to parse grading response, defaulting to score 3');
     return {
+      isAttempt: true,
       score: 3,
       passed: 3 >= unit.passThreshold,
       feedback: response.text.slice(0, 500),

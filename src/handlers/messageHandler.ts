@@ -216,16 +216,10 @@ export function registerMessageHandlers(app: App): void {
 
         // ── Curriculum exercise grading ──────────────────────
         // If user has a unit in "practicing" status in DM, grade their response
-        // But first check if the message is a navigation/help request, not an exercise attempt
-        const NON_EXERCISE_PATTERNS = /^(show|help|hint|what|can you|tell me|explain|go back|skip|repeat|review|start over|next unit|previous|menu)/i;
+        // The LLM grader detects non-exercise messages (questions, navigation) via isAttempt flag
         if (channelType === 'im' && (text || audioFile)) {
           const current = getCurrentUnit(user.id);
           if (current && current.progress.status === 'practicing') {
-            // If text matches a navigation/question pattern (not voice), let it fall through to charla
-            if (text && !audioFile && NON_EXERCISE_PATTERNS.test(text.trim())) {
-              msgLog.info(`Non-exercise message detected during practicing: "${text.slice(0, 60)}"`);
-              // Fall through to charla conversation handler below
-            } else {
             // Transcribe voice memo if needed
             let responseText = text;
             if (audioFile && !text) {
@@ -246,7 +240,11 @@ export function registerMessageHandlers(app: App): void {
             const exerciseInputMode = (audioFile && !text) ? 'voice' as const : 'text' as const;
             const grade = await gradeExerciseResponse(current.unit, exerciseText, responseText, user.id, exerciseInputMode);
 
-            if (grade.passed) {
+            // If the LLM determined this isn't an exercise attempt, fall through to charla
+            if (!grade.isAttempt) {
+              msgLog.info(`Non-exercise message detected by grader during practicing: "${(responseText ?? '').slice(0, 60)}"`);
+              // Don't return — fall through to charla conversation handler below
+            } else if (grade.passed) {
               const { leveledUp, newLevel } = markUnitPassed(user.id, current.unit.id, grade.score);
 
               // Delete all tracked lesson/exercise/grading messages to keep DM clean
@@ -278,6 +276,8 @@ export function registerMessageHandlers(app: App): void {
                 ] as any,
               });
               // Don't track the summary — it stays permanently
+              updateStreak(user.id);
+              return;
 
             } else {
               const attempts = recordAttempt(user.id, current.unit.id, grade.score);
@@ -306,11 +306,10 @@ export function registerMessageHandlers(app: App): void {
                 const hintResult = await say({ text: "_Hint: Try reviewing the lesson above and focus on the key vocabulary. You've got this!_" });
                 trackUnitMessage(user.id, (hintResult as any)?.ts);
               }
+              updateStreak(user.id);
+              return;
             }
-
-            updateStreak(user.id);
-            return;
-            } // end else (exercise attempt, not navigation)
+            // If !grade.isAttempt, we fall through to charla below
           }
         }
 
