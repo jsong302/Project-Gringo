@@ -5,6 +5,8 @@ import { log } from '../utils/logger';
 import { logGradingErrors, type ErrorCategory } from './errorTracker';
 import { createCard, type CardType } from './srsRepository';
 import { getSetting } from './settings';
+import { getPlanContext } from './lessonPlan';
+import { getAllUsers } from './userService';
 
 const lessonLog = log.withScope('lesson');
 
@@ -151,6 +153,20 @@ export function formatLunfardoBlocks(post: LunfardoPost): any[] {
   ];
 }
 
+// ── Recent lessons (for dedup) ──────────────────────────────
+
+/**
+ * Get the titles of recent daily lessons to avoid repeating topics.
+ */
+export function getRecentLessonTopics(limit = 7): string[] {
+  const db = getDb();
+  const result = db.exec(
+    `SELECT topic FROM lesson_log WHERE lesson_type = 'daily' ORDER BY posted_at DESC LIMIT ${limit}`,
+  );
+  if (!result.length) return [];
+  return result[0].values.map((row) => row[0] as string);
+}
+
 // ── Lesson generation ───────────────────────────────────────
 
 export async function generateDailyLesson(level: number): Promise<{
@@ -158,7 +174,29 @@ export async function generateDailyLesson(level: number): Promise<{
   blocks: any[];
 }> {
   const promptTemplate = getPromptOrThrow('daily_lesson');
-  const prompt = interpolate(promptTemplate, { level: String(level) });
+
+  // Build plan context — aggregate from all users (channel-wide lesson)
+  const users = getAllUsers().filter((u) => u.onboarded);
+  const planContextParts: string[] = [];
+  for (const user of users) {
+    const ctx = getPlanContext(user.id);
+    if (ctx) planContextParts.push(`${user.displayName ?? 'Student'}: ${ctx}`);
+  }
+  const planContext = planContextParts.length > 0
+    ? `Student lesson plans:\n${planContextParts.join('\n\n')}`
+    : '';
+
+  // Build previous lessons context
+  const recentTopics = getRecentLessonTopics();
+  const previousLessons = recentTopics.length > 0
+    ? `Previous lessons (do NOT repeat these topics): ${recentTopics.join(', ')}`
+    : '';
+
+  const prompt = interpolate(promptTemplate, {
+    level: String(level),
+    plan_context: planContext,
+    previous_lessons: previousLessons,
+  });
 
   const response = await callLlm({
     system: 'Respond only with valid JSON. No additional text.',
