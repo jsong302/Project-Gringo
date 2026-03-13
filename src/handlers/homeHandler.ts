@@ -670,11 +670,22 @@ export function buildHomeBlocks(slackUserId: string): Record<string, unknown>[] 
           text: [
             ':wave: *Welcome to Gringo!*',
             '',
-            'I\'m your personal Argentine Spanish tutor. Before we get started, I need to set up your profile.',
+            'I\'m your personal Argentine Spanish tutor for the Argentina mission trip. Let\'s get you set up!',
+          ].join('\n'),
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: [
+            '*How to get started:*',
             '',
-            ':speech_balloon: *Check your DMs* — I sent you a welcome message to get you set up with a quick placement test and your preferences.',
-            '',
-            'Once you\'re onboarded, this Home tab will be your dashboard for lessons, exercises, SRS reviews, and progress tracking.',
+            ':one: *Check your DMs* — I sent you a welcome message',
+            ':two: *Take the placement test* (or skip if you\'re a beginner)',
+            ':three: *Pick your feedback style* — text or voice',
+            ':four: *Come back here* — this Home tab becomes your dashboard for lessons, exercises, and progress',
+            ':five: *Chat with me in DMs* anytime to practice conversational Spanish',
           ].join('\n'),
         },
       },

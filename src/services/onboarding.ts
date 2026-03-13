@@ -31,9 +31,23 @@ export function buildWelcomeBlocks(displayName?: string): Record<string, unknown
         text: [
           `${greeting} I'll teach you to speak like a real porteño — with voseo, lunfardo, and authentic flavor.`,
           '',
-          "There's a small group (6-15 people) learning together. We'll chat, practice with voice memos, and review vocabulary every day.",
+          "There's a small group learning together for our Argentina mission trip. We'll chat, practice with voice memos, and review vocabulary every day.",
+        ].join('\n'),
+      },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: [
+          '*Here\'s how to get started:*',
           '',
-          "First, I need to know where you're at with Spanish so I can place you in the right spot:",
+          '*Step 1:* Tell me your Spanish level below (quick placement test or skip)',
+          '*Step 2:* Pick how you want feedback (text or voice)',
+          '*Step 3:* Head to the *Home* tab — that\'s your dashboard for lessons, exercises, and progress',
+          '*Step 4:* Chat with me here in DMs anytime to practice conversational Spanish',
+          '',
+          "Let's start with Step 1 — where are you at with Spanish?",
         ].join('\n'),
       },
     },
