@@ -783,19 +783,21 @@ export function registerHomeHandler(app: App): void {
         const exerciseText = state.unit.exercisePrompt ?? state.unit.title;
         const grade = await gradeExerciseResponse(current.unit, exerciseText, answer, user.id, 'text');
 
-        // If the LLM says it's not an attempt, notify the user and stay in lesson view
+        // If the LLM says it's not an attempt, show feedback on the Home tab
         if (!grade.isAttempt) {
           homeLog.info(`Non-exercise response in modal from ${slackUserId}: "${answer.slice(0, 60)}"`);
-          // Notify via DM since we can't update the modal after ack
-          try {
-            const dm = await client.conversations.open({ users: slackUserId });
-            if (dm.channel?.id) {
-              await client.chat.postMessage({
-                channel: dm.channel.id,
-                text: ':thinking_face: That didn\'t look like an exercise answer. Try responding in Spanish to the exercise prompt. If you have a question, chat with me here in DMs!',
-              });
-            }
-          } catch { /* best effort */ }
+          // Create a "not an attempt" grade result to show on Home tab
+          state.view = 'grade';
+          state.lastGradeResult = {
+            passed: false,
+            score: 0,
+            feedback: ':thinking_face: That didn\'t look like an exercise answer. Try responding in Spanish to the exercise prompt. If you have a question, chat with me in DMs!',
+            errors: [],
+            correction: '',
+            isAttempt: false,
+          };
+          setHomeSession(state);
+          await publishHomeTab(client, slackUserId);
           return;
         }
 
