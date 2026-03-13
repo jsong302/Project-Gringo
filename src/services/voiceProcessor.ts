@@ -40,6 +40,7 @@ export async function processVoiceMemo(
   memoryContext?: string,
   userId?: number,
   displayName?: string,
+  slackUserId?: string,
 ): Promise<VoiceResult> {
   // Step 1: Transcribe
   voiceLog.info('Processing voice memo...');
@@ -79,6 +80,7 @@ export async function processVoiceMemo(
       memoryContext,
       userId,
       displayName,
+      slackUserId,
     );
   }
 

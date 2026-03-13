@@ -1,19 +1,24 @@
 /**
- * Charla Engine — LLM-powered free conversation in Argentine Spanish.
+ * Charla Engine — Unified LLM-powered conversation agent.
  *
- * Manages conversation context and pronunciation via tool use.
- * The LLM decides when to explain, switch languages, or adjust — no regex.
+ * Handles free conversation, pronunciation, profile updates, observations,
+ * and (for admins) bot management — all through a single multi-turn tool loop.
+ * The LLM decides what to do based on context; no regex heuristics.
  */
-import { callLlm, callLlmWithTools } from './llm';
-import type { LlmMessage, ToolDefinition, ToolUseBlock, ToolResultBlock } from './llm';
+import { callLlmWithTools } from './llm';
+import type { LlmMessage, ToolDefinition, ToolResultBlock } from './llm';
 import { getPromptOrThrow, interpolate } from './prompts';
 import { log } from '../utils/logger';
 import { getSetting } from './settings';
 import { saveLearnerFact } from './learnerFacts';
 import { updateLevel, updateTimezone, updateDisplayName } from './userService';
 import { upsertMemory } from './userMemory';
+import { ADMIN_TOOL_DEFINITIONS, executeTool } from './adminTools';
+import { isAdmin } from './settings';
 
 const charlaLog = log.withScope('charla');
+
+const MAX_TOOL_TURNS = 10;
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -22,10 +27,10 @@ export interface CharlaResponse {
   isExplanation: boolean;
   inputTokens: number;
   outputTokens: number;
-  pronunciations: string[];  // phrases the LLM wants pronounced
+  pronunciations: string[];
 }
 
-// ── Tools ──────────────────────────────────────────────────
+// ── Base tools (available to all users) ─────────────────────
 
 const PRONOUNCE_TOOL: ToolDefinition = {
   name: 'pronounce',
@@ -82,9 +87,19 @@ const UPDATE_PROFILE_TOOL: ToolDefinition = {
   },
 };
 
-const CHARLA_TOOLS: ToolDefinition[] = [PRONOUNCE_TOOL, LOG_OBSERVATION_TOOL, UPDATE_PROFILE_TOOL];
+const BASE_TOOLS: ToolDefinition[] = [PRONOUNCE_TOOL, LOG_OBSERVATION_TOOL, UPDATE_PROFILE_TOOL];
 
-// ── Profile updates ─────────────────────────────────────────
+// ── Tool sets ───────────────────────────────────────────────
+
+/** Get the tool set for this user — base tools + admin tools if they're an admin. */
+function getToolsForUser(slackUserId?: string): ToolDefinition[] {
+  if (slackUserId && isAdmin(slackUserId)) {
+    return [...BASE_TOOLS, ...ADMIN_TOOL_DEFINITIONS];
+  }
+  return BASE_TOOLS;
+}
+
+// ── Built-in tool handlers (non-admin) ──────────────────────
 
 function handleProfileUpdate(userId: number, field: string, value: string): void {
   switch (field) {
@@ -112,16 +127,45 @@ function handleProfileUpdate(userId: number, field: string, value: string): void
     case 'interests':
     case 'strengths':
     case 'weaknesses':
-      // Store as a learner fact so it feeds into the memory profile
       saveLearnerFact(userId, field === 'interests' ? 'interest' : field === 'strengths' ? 'strength' : 'knowledge_gap', value, 'tool');
       charlaLog.info(`Profile update: user ${userId} ${field} → ${value}`);
       break;
   }
 }
 
-// ── Message building ────────────────────────────────────────
+/** Execute a tool call and return the result string. */
+function handleToolCall(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  userId?: number,
+): string {
+  // Built-in charla tools
+  if (toolName === 'pronounce') {
+    return 'Audio pronunciation will be sent as a voice clip.';
+  }
+  if (toolName === 'log_student_observation' && userId) {
+    const { category, fact } = toolInput as { category: string; fact: string };
+    saveLearnerFact(userId, category, fact, 'tool');
+    return 'Observation logged.';
+  }
+  if (toolName === 'update_profile' && userId) {
+    const { field, value } = toolInput as { field: string; value: string };
+    handleProfileUpdate(userId, field, value);
+    return 'Profile updated.';
+  }
 
-export function buildCharlaSystemPrompt(userLevel: number, memoryContext?: string, displayName?: string): string {
+  // Admin tools — delegated to adminTools.ts executeTool
+  return executeTool(toolName, toolInput);
+}
+
+// ── System prompt ───────────────────────────────────────────
+
+export function buildCharlaSystemPrompt(
+  userLevel: number,
+  memoryContext?: string,
+  displayName?: string,
+  isAdminUser?: boolean,
+): string {
   const template = getPromptOrThrow('charla_system');
   let prompt = interpolate(template, { level: String(userLevel) });
 
@@ -131,6 +175,27 @@ export function buildCharlaSystemPrompt(userLevel: number, memoryContext?: strin
 
   if (memoryContext) {
     prompt += `\n\n--- Learner Profile ---\n${memoryContext}\n\nUse this profile to personalize your teaching. Focus on their weaknesses, build on their strengths, and reference their interests when possible.`;
+  }
+
+  if (isAdminUser) {
+    prompt += `\n\n--- Admin Mode ---
+This user is an admin. In addition to teaching Spanish, you can help them manage the bot.
+
+As an admin, you can:
+- View and change system settings (cron schedules, SRS params, XP thresholds, etc.)
+- See all users and their progress
+- Analyze error patterns and suggest interventions
+- Edit system prompts that control lessons, grading, and conversation
+- Manage admin access (add/remove admins)
+- Award XP, change user levels
+- View SRS health metrics
+
+How to decide what to do:
+- If the message is casual conversation or Spanish practice → teach as normal
+- If the message asks about users, settings, data, or management → use admin tools
+- You can mix both in a single response
+
+Be concise and actionable. When making changes, confirm what you did.`;
   }
 
   return prompt;
@@ -143,11 +208,12 @@ export function buildMessages(history: Array<{ role: 'user' | 'assistant'; text:
   }));
 }
 
-// ── Core conversation ───────────────────────────────────────
+// ── Multi-turn agent loop ───────────────────────────────────
 
 /**
- * Generate a charla response with tool use (pronunciation, observations, profile updates).
- * The LLM handles all intent detection — confusion, questions, profile updates, etc.
+ * Run the charla agent with a multi-turn tool loop.
+ * For regular users, tools are: pronounce, log_observation, update_profile.
+ * For admins, all admin tools are also available.
  */
 export async function generateCharlaResponse(
   userMessage: string,
@@ -156,84 +222,112 @@ export async function generateCharlaResponse(
   memoryContext?: string,
   userId?: number,
   displayName?: string,
+  slackUserId?: string,
 ): Promise<CharlaResponse> {
-  const system = buildCharlaSystemPrompt(userLevel, memoryContext, displayName);
+  const isAdminUser = slackUserId ? isAdmin(slackUserId) : false;
+  const system = buildCharlaSystemPrompt(userLevel, memoryContext, displayName, isAdminUser);
+  const tools = getToolsForUser(slackUserId);
 
   const messages: LlmMessage[] = [
     ...conversationHistory,
     { role: 'user', content: userMessage },
   ];
 
-  const response = await callLlmWithTools({
-    system,
-    messages,
-    tools: CHARLA_TOOLS,
-    temperature: getSetting('llm.charla_temperature', 0.8),
-    maxTokens: getSetting('llm.charla_max_tokens', 512),
-  });
-
-  // Process tool calls: collect pronunciations and log observations
   const pronunciations: string[] = [];
-  let observationCount = 0;
-  const MAX_OBSERVATIONS_PER_MESSAGE = 3;
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let turns = 0;
 
-  for (const toolUse of response.toolUses) {
-    if (toolUse.name === 'pronounce') {
-      const phrase = (toolUse.input as any).phrase;
-      if (phrase) pronunciations.push(phrase);
-    } else if (toolUse.name === 'log_student_observation' && userId) {
-      if (observationCount < MAX_OBSERVATIONS_PER_MESSAGE) {
-        const { category, fact } = toolUse.input as { category: string; fact: string };
-        saveLearnerFact(userId, category, fact, 'tool');
+  while (turns < MAX_TOOL_TURNS) {
+    turns++;
+
+    const maxTokens = isAdminUser
+      ? getSetting('llm.admin_max_tokens', 2048)
+      : getSetting('llm.charla_max_tokens', 512);
+
+    const response = await callLlmWithTools({
+      system,
+      messages,
+      tools,
+      temperature: getSetting('llm.charla_temperature', 0.8),
+      maxTokens,
+    });
+
+    totalInputTokens += response.inputTokens;
+    totalOutputTokens += response.outputTokens;
+
+    // No tool calls → we're done
+    if (response.toolUses.length === 0) {
+      charlaLog.debug(`Charla response (${turns} turn(s)): ${response.text.slice(0, 80)}...`);
+      return {
+        text: response.text,
+        isExplanation: false,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        pronunciations,
+      };
+    }
+
+    // Process tool calls
+    const toolResults: ToolResultBlock[] = [];
+    let observationCount = 0;
+    const MAX_OBSERVATIONS_PER_MESSAGE = 3;
+
+    for (const toolUse of response.toolUses) {
+      // Collect pronunciations
+      if (toolUse.name === 'pronounce') {
+        const phrase = (toolUse.input as any).phrase;
+        if (phrase) pronunciations.push(phrase);
+      }
+
+      // Rate-limit observations
+      if (toolUse.name === 'log_student_observation') {
+        if (observationCount >= MAX_OBSERVATIONS_PER_MESSAGE) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: 'Observation limit reached for this message.',
+          });
+          continue;
+        }
         observationCount++;
       }
-    } else if (toolUse.name === 'update_profile' && userId) {
-      const { field, value } = toolUse.input as { field: string; value: string };
-      handleProfileUpdate(userId, field, value);
+
+      const result = handleToolCall(toolUse.name, toolUse.input as Record<string, unknown>, userId);
+      toolResults.push({
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content: result,
+      });
+    }
+
+    // Feed tool results back into the conversation
+    messages.push({ role: 'assistant', content: response.content as any });
+    messages.push({ role: 'user', content: toolResults as any });
+
+    charlaLog.debug(`Tool turn ${turns}: ${response.toolUses.map((t) => t.name).join(', ')}`);
+
+    // If the LLM already provided text alongside tool calls AND stop reason is end_turn, return it
+    if (response.text && response.stopReason === 'end_turn') {
+      if (pronunciations.length > 0) {
+        charlaLog.info(`LLM called pronounce tool for: ${pronunciations.join(', ')}`);
+      }
+      return {
+        text: response.text,
+        isExplanation: false,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        pronunciations,
+      };
     }
   }
 
-  // If there were tool calls but also text, we have our response
-  // If tool calls but no text, we need a follow-up call with tool results
-  let text = response.text;
-
-  if (response.toolUses.length > 0 && !text) {
-    // Build tool results and get the final text response
-    const toolResults: ToolResultBlock[] = response.toolUses.map((tu) => ({
-      type: 'tool_result' as const,
-      tool_use_id: tu.id,
-      content: tu.name === 'pronounce'
-        ? 'Audio pronunciation will be sent as a voice clip.'
-        : tu.name === 'update_profile'
-        ? 'Profile updated.'
-        : 'Observation logged.',
-    }));
-
-    const followUp = await callLlm({
-      system,
-      messages: [
-        ...messages,
-        { role: 'assistant', content: response.content as any },
-        { role: 'user', content: toolResults as any },
-      ],
-      temperature: getSetting('llm.charla_temperature', 0.8),
-      maxTokens: getSetting('llm.charla_max_tokens', 512),
-    });
-
-    text = followUp.text;
-  }
-
-  if (pronunciations.length > 0) {
-    charlaLog.info(`LLM called pronounce tool for: ${pronunciations.join(', ')}`);
-  }
-
-  charlaLog.debug(`Charla response: ${text.slice(0, 80)}...`);
-
+  charlaLog.warn(`Hit max tool turns (${MAX_TOOL_TURNS})`);
   return {
-    text,
+    text: 'Sorry, I got a bit lost there. Can you rephrase that?',
     isExplanation: false,
-    inputTokens: response.inputTokens,
-    outputTokens: response.outputTokens,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
     pronunciations,
   };
 }
@@ -242,7 +336,7 @@ export async function generateCharlaResponse(
 
 /**
  * Process a charla message. All intent detection (confusion, questions,
- * profile updates) is handled by the LLM via tool use and system prompt.
+ * profile updates, admin operations) is handled by the LLM via tool use.
  */
 export async function processCharlaMessage(
   userMessage: string,
@@ -251,6 +345,7 @@ export async function processCharlaMessage(
   memoryContext?: string,
   userId?: number,
   displayName?: string,
+  slackUserId?: string,
 ): Promise<CharlaResponse> {
-  return generateCharlaResponse(userMessage, conversationHistory, userLevel, memoryContext, userId, displayName);
+  return generateCharlaResponse(userMessage, conversationHistory, userLevel, memoryContext, userId, displayName, slackUserId);
 }

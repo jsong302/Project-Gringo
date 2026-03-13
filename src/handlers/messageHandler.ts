@@ -25,7 +25,6 @@ import { getLessonByMessageTs, gradeLessonResponse, formatGradingBlocks, logLess
 import type { LlmMessage } from '../services/llm';
 import { postMessage } from '../utils/slackHelpers';
 import { getXpForTextMessage, getXpForVoiceMemo, getSetting } from '../services/settings';
-import { isAdminDm, handleAdminDm } from './adminHandler';
 import { sendWelcomeDm } from './onboardingHandler';
 import { generatePronunciationAudio } from '../services/pronunciation';
 import { uploadAudioToSlack } from '../utils/slackAudio';
@@ -136,12 +135,6 @@ export function registerMessageHandlers(app: App): void {
 
     await runWithObservabilityContext(async () => {
       try {
-        // Route admin DMs to the admin agent
-        if (isAdminDm(slackUserId, channelType)) {
-          await handleAdminDm(slackUserId, text, client, channelId, threadTs);
-          return;
-        }
-
         // ── Lesson thread detection ──────────────────────────
         // Replies in lesson threads are always graded (no @mention needed)
         const isThreadReply = (message as any).thread_ts != null;
@@ -236,6 +229,7 @@ export function registerMessageHandlers(app: App): void {
             memoryContext,
             user.id,
             user.displayName ?? undefined,
+            slackUserId,
           );
 
           addTurn(conversation.id);
@@ -271,7 +265,7 @@ export function registerMessageHandlers(app: App): void {
 
         // ── Text message path ────────────────────────────────
 
-        const response = await processCharlaMessage(text, history, user.level, memoryContext, user.id, user.displayName ?? undefined);
+        const response = await processCharlaMessage(text, history, user.level, memoryContext, user.id, user.displayName ?? undefined, slackUserId);
 
         addTurn(conversation.id);
         updateStreak(user.id);
