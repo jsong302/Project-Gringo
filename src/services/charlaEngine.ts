@@ -14,7 +14,9 @@ import { saveLearnerFact } from './learnerFacts';
 import { updateLevel, updateTimezone, updateDisplayName } from './userService';
 import { upsertMemory } from './userMemory';
 import { ADMIN_TOOL_DEFINITIONS, executeTool } from './adminTools';
-import { isAdmin } from './settings';
+import { isAdmin, listSettings } from './settings';
+import { getAllUsers, getUserById } from './userService';
+import { getMemoryForPrompt } from './userMemory';
 
 const charlaLog = log.withScope('charla');
 
@@ -162,6 +164,47 @@ function handleToolCall(
   return executeTool(toolName, toolInput);
 }
 
+// ── Admin context snapshot ───────────────────────────────────
+
+function buildAdminContextSnapshot(adminUserId?: number): string {
+  let ctx = '\n\n## Current State\n';
+
+  try {
+    const settings = listSettings();
+    const settingSummary = settings.map((s) => `- ${s.key}: ${JSON.stringify(s.value)}`).join('\n');
+    ctx += `\n### Settings (${settings.length} total)\n${settingSummary}\n`;
+  } catch {
+    ctx += '\n### Settings: unavailable\n';
+  }
+
+  try {
+    const users = getAllUsers();
+    const userSummary = users.map(
+      (u) => `- ${u.displayName ?? u.slackUserId} (id:${u.id}): level ${u.level}, ${u.streakDays}-day streak`,
+    ).join('\n');
+    ctx += `\n### Users (${users.length} total)\n${userSummary}\n`;
+  } catch {
+    ctx += '\n### Users: unavailable\n';
+  }
+
+  if (adminUserId) {
+    try {
+      const admin = getUserById(adminUserId);
+      if (admin) {
+        ctx += `\n### You are chatting with\n`;
+        ctx += `- Name: ${admin.displayName ?? admin.slackUserId}, internal user_id: ${admin.id}\n`;
+        ctx += `- Level: ${admin.level}, Streak: ${admin.streakDays} days\n`;
+        const memory = getMemoryForPrompt(adminUserId);
+        if (memory) ctx += `- ${memory}\n`;
+      }
+    } catch {
+      // Admin user not in DB yet
+    }
+  }
+
+  return ctx;
+}
+
 // ── System prompt ───────────────────────────────────────────
 
 export function buildCharlaSystemPrompt(
@@ -169,6 +212,7 @@ export function buildCharlaSystemPrompt(
   memoryContext?: string,
   displayName?: string,
   isAdminUser?: boolean,
+  adminUserId?: number,
 ): string {
   const template = getPromptOrThrow('charla_system');
   let prompt = interpolate(template, { level: String(userLevel) });
@@ -190,6 +234,8 @@ As an admin, you can:
 - See all users and their progress
 - Analyze error patterns and suggest interventions
 - Edit system prompts that control lessons, grading, and conversation
+- View and edit the shared curriculum (units, order, prompts, thresholds)
+- See everyone's curriculum progress and manually place users at specific units
 - Manage admin access (add/remove admins)
 - Change user levels based on proficiency
 - View SRS health metrics
@@ -200,6 +246,9 @@ How to decide what to do:
 - You can mix both in a single response
 
 Be concise and actionable. When making changes, confirm what you did.`;
+
+    // Embed live context so the LLM doesn't need to call tools for basic awareness
+    prompt += buildAdminContextSnapshot(adminUserId);
   }
 
   return prompt;
@@ -229,7 +278,7 @@ export async function generateCharlaResponse(
   slackUserId?: string,
 ): Promise<CharlaResponse> {
   const isAdminUser = slackUserId ? isAdmin(slackUserId) : false;
-  const system = buildCharlaSystemPrompt(userLevel, memoryContext, displayName, isAdminUser);
+  const system = buildCharlaSystemPrompt(userLevel, memoryContext, displayName, isAdminUser, userId);
   const tools = getToolsForUser(slackUserId);
 
   const messages: LlmMessage[] = [

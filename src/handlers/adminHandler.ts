@@ -1,18 +1,15 @@
 /**
- * Admin Handler — Wires the admin agent into Slack.
+ * Admin Handler — Wires admin commands into Slack via the charla engine.
  *
- * Two entry points:
- *  - `/gringo admin <message>` — slash command (ephemeral responses)
- *  - DM to the bot — if sender is admin, routes to admin agent (visible replies)
- *
- * The admin agent is a unified charla + admin agent: it can chat in Spanish
- * AND manage the bot, switching seamlessly based on context.
+ * `/gringo admin <message>` routes through the same charla engine that
+ * handles DMs, but the charla engine detects admin users and gives them
+ * access to admin tools + a live context snapshot.
  */
-import type { App } from '@slack/bolt';
 import { log } from '../utils/logger';
 import { isAdmin } from '../services/settings';
-import { runAdminAgent } from '../services/adminAgent';
 import { getOrCreateUser } from '../services/userService';
+import { processCharlaMessage, type CharlaResponse } from '../services/charlaEngine';
+import { getMemoryForPrompt } from '../services/userMemory';
 import type { LlmMessage } from '../services/llm';
 import { respondEphemeral, postMessage } from '../utils/slackHelpers';
 import { generatePronunciationAudio } from '../services/pronunciation';
@@ -21,8 +18,6 @@ import { uploadAudioToSlack } from '../utils/slackAudio';
 const adminLog = log.withScope('admin-handler');
 
 // ── In-memory conversation history per admin ────────────────
-// Keyed by Slack user ID. Keeps last N turns for multi-turn conversations.
-
 const MAX_HISTORY_TURNS = 20;
 const conversationHistory = new Map<string, LlmMessage[]>();
 
@@ -36,7 +31,6 @@ function appendHistory(slackUserId: string, userMsg: string, assistantMsg: strin
     { role: 'user', content: userMsg },
     { role: 'assistant', content: assistantMsg },
   );
-  // Trim to max turns (keep most recent)
   while (history.length > MAX_HISTORY_TURNS * 2) {
     history.shift();
   }
@@ -47,25 +41,28 @@ export function clearAdminHistory(slackUserId: string): void {
   conversationHistory.delete(slackUserId);
 }
 
-// ── Shared agent runner ─────────────────────────────────────
+// ── Shared runner (routes through charla engine) ─────────────
 
-async function runAgentForAdmin(
+async function runForAdmin(
   slackUserId: string,
   message: string,
-): Promise<{ response: string; toolInfo: string; toolCalls: Array<{ name: string; input: Record<string, unknown>; result: string }> }> {
+): Promise<CharlaResponse> {
   const user = getOrCreateUser(slackUserId);
   const history = getHistory(slackUserId);
-  const result = await runAdminAgent(message, history, user.id);
+  const memoryContext = getMemoryForPrompt(user.id);
 
-  appendHistory(slackUserId, message, result.response);
+  const response = await processCharlaMessage(
+    message,
+    history,
+    user.level,
+    memoryContext,
+    user.id,
+    user.displayName ?? undefined,
+    slackUserId,
+  );
 
-  const toolInfo = result.toolCalls.length > 0
-    ? `${result.toolCalls.length} tool call(s) in ${result.turns} turn(s) | ${result.totalInputTokens + result.totalOutputTokens} tokens`
-    : '';
-
-  adminLog.info(`Admin response: ${result.turns} turns, ${result.toolCalls.length} tools, ${result.totalInputTokens + result.totalOutputTokens} tokens`);
-
-  return { response: result.response, toolInfo, toolCalls: result.toolCalls };
+  appendHistory(slackUserId, message, response.text);
+  return response;
 }
 
 // ── Slash command handler ───────────────────────────────────
@@ -75,7 +72,6 @@ export async function handleAdmin(
   message: string,
   respond: (msg: any) => Promise<void>,
 ): Promise<void> {
-  // Auth check
   if (!isAdmin(slackUserId)) {
     await respondEphemeral(respond, 'You don\'t have admin permissions. Ask an admin to add you.');
     return;
@@ -83,20 +79,20 @@ export async function handleAdmin(
 
   const trimmed = message.trim();
 
-  // Special commands
   if (trimmed === '' || trimmed === 'help') {
     await respondEphemeral(respond, [
-      '*Admin Agent — Chat with the bot to manage it and practice Spanish*',
+      '*Admin — Chat with the bot to manage it and practice Spanish*',
       '',
       'You can speak in Spanish (charla) or English (admin), or mix both.',
       '',
       'Examples:',
-      '• `/gringo admin show me all users and their progress`',
-      '• `/gringo admin change the daily lesson time to 10am`',
-      '• `/gringo admin che, cómo andan los pibes?`',
-      '• `/gringo admin add @maria as admin`',
+      '- `/gringo admin show me all users and their progress`',
+      '- `/gringo admin change the daily lesson time to 10am`',
+      '- `/gringo admin che, como andan los pibes?`',
+      '- `/gringo admin add @maria as admin`',
+      '- `/gringo admin show curriculum progress`',
       '',
-      'You can also DM the bot directly to chat without the slash command.',
+      'You can also DM the bot directly — admins get the same tools in DMs.',
       '',
       '`/gringo admin clear` — Clear conversation history',
     ].join('\n'));
@@ -109,111 +105,29 @@ export async function handleAdmin(
     return;
   }
 
-  // Run agent
   adminLog.info(`Admin command from ${slackUserId}: ${trimmed.slice(0, 100)}`);
 
   try {
-    const { response, toolInfo, toolCalls } = await runAgentForAdmin(slackUserId, trimmed);
+    const response = await runForAdmin(slackUserId, trimmed);
 
     const blocks: any[] = [
-      { type: 'section', text: { type: 'mrkdwn', text: response } },
+      { type: 'section', text: { type: 'mrkdwn', text: response.text } },
     ];
 
-    if (toolInfo) {
-      blocks.push({
-        type: 'context',
-        elements: [{ type: 'mrkdwn', text: `_${toolInfo}_` }],
-      });
-    }
-
     // Pronunciation audio can't be sent via ephemeral response
-    const pronounceCalls = toolCalls.filter((tc) => tc.name === 'pronounce');
-    if (pronounceCalls.length > 0) {
-      adminLog.info(`Skipping ${pronounceCalls.length} pronunciation clip(s) in slash command (ephemeral response — use DM instead)`);
+    if (response.pronunciations.length > 0) {
+      adminLog.info(`Skipping ${response.pronunciations.length} pronunciation clip(s) in slash command (ephemeral — use DM instead)`);
     }
 
     await respond({
       response_type: 'ephemeral',
-      text: response,
+      text: response.text,
       blocks,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    adminLog.error(`Admin agent failed: ${msg}`);
-    await respondEphemeral(respond, `Admin agent error: ${msg}`);
-  }
-}
-
-// ── DM handler (called from messageHandler) ─────────────────
-
-/**
- * Check if this DM should be handled by the admin agent.
- * Returns true if the sender is an admin.
- */
-export function isAdminDm(slackUserId: string, channelType: string): boolean {
-  return channelType === 'im' && isAdmin(slackUserId);
-}
-
-/**
- * Handle a DM from an admin — routes to the admin agent.
- * Returns the agent's response text, or null if it failed.
- */
-export async function handleAdminDm(
-  slackUserId: string,
-  message: string,
-  client: any,
-  channelId: string,
-  threadTs: string,
-): Promise<void> {
-  adminLog.info(`Admin DM from ${slackUserId}: ${message.slice(0, 100)}`);
-
-  // Handle "clear" in DM too
-  if (message.trim().toLowerCase() === 'clear') {
-    clearAdminHistory(slackUserId);
-    await postMessage(client, channelId, 'History cleared. Starting fresh.', undefined, threadTs);
-    return;
-  }
-
-  try {
-    const { response, toolInfo, toolCalls } = await runAgentForAdmin(slackUserId, message);
-
-    const blocks: any[] = [
-      { type: 'section', text: { type: 'mrkdwn', text: response } },
-    ];
-
-    if (toolInfo) {
-      blocks.push({
-        type: 'context',
-        elements: [{ type: 'mrkdwn', text: `_${toolInfo}_` }],
-      });
-    }
-
-    await postMessage(client, channelId, response, blocks, threadTs);
-
-    // Generate and upload pronunciation audio for any pronounce tool calls
-    const pronounceCalls = toolCalls.filter((tc) => tc.name === 'pronounce');
-    if (pronounceCalls.length > 0) {
-      const phrases = pronounceCalls.map((tc) => tc.input.phrase as string);
-      try {
-        adminLog.info(`Generating pronunciation audio for: ${phrases.map((p) => `"${p}"`).join(', ')}`);
-        const audioBuffers = await generatePronunciationAudio(phrases);
-        for (let i = 0; i < phrases.length; i++) {
-          const buf = audioBuffers[i];
-          if (buf) {
-            await uploadAudioToSlack(client, channelId, buf, phrases[i], threadTs);
-          } else {
-            adminLog.warn(`No audio generated for "${phrases[i]}"`);
-          }
-        }
-      } catch (audioErr) {
-        const audioMsg = audioErr instanceof Error ? audioErr.message : String(audioErr);
-        adminLog.error(`Failed to generate/upload pronunciation audio: ${audioMsg}`);
-      }
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    adminLog.error(`Admin DM agent failed: ${msg}`);
-    await postMessage(client, channelId, `Error: ${msg}`, undefined, threadTs);
+    adminLog.error(`Admin command failed: ${msg}`);
+    await respondEphemeral(respond, `Error: ${msg}`);
   }
 }
 

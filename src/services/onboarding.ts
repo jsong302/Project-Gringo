@@ -3,9 +3,10 @@
  *
  * Flow:
  *  1. Welcome message explaining Gringo
- *  2. Level assessment via buttons (1-5)
- *  3. Voice memo tutorial
- *  4. Channel guide + first exercise prompt
+ *  2. Self-assessment via buttons (No Spanish / Some basics / Conversational / Advanced)
+ *  3. Placement test (multiple choice) OR skip for beginners
+ *  4. Voice memo tutorial
+ *  5. Channel guide + first exercise prompt
  *
  * Each step is a separate message so the user can scroll back.
  */
@@ -31,22 +32,22 @@ export function buildWelcomeBlocks(displayName?: string): Record<string, unknown
           '',
           "There's a small group (6-15 people) learning together. We'll chat, practice with voice memos, and review vocabulary every day.",
           '',
-          "First, I need to know your level so I can adapt the lessons. Pick the one that fits:",
+          "First, I need to know where you're at with Spanish so I can place you in the right spot:",
         ].join('\n'),
       },
     },
   ];
 }
 
-// ── Step 2: Level Assessment ───────────────────────────────
+// ── Step 2: Self-Assessment ────────────────────────────────
 
-export function buildLevelPickerBlocks(): Record<string, unknown>[] {
+export function buildSelfAssessmentBlocks(): Record<string, unknown>[] {
   return [
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: '*What is your Spanish level?*',
+        text: '*How much Spanish do you know?*',
       },
     },
     {
@@ -54,33 +55,27 @@ export function buildLevelPickerBlocks(): Record<string, unknown>[] {
       elements: [
         {
           type: 'button',
-          text: { type: 'plain_text', text: '1 - None', emoji: true },
-          action_id: 'onboard_level_1',
+          text: { type: 'plain_text', text: 'No Spanish', emoji: true },
+          action_id: 'onboard_assess_1',
           value: '1',
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: '2 - A little', emoji: true },
-          action_id: 'onboard_level_2',
+          text: { type: 'plain_text', text: 'Some basics', emoji: true },
+          action_id: 'onboard_assess_2',
           value: '2',
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: '3 - Intermediate', emoji: true },
-          action_id: 'onboard_level_3',
+          text: { type: 'plain_text', text: 'Conversational', emoji: true },
+          action_id: 'onboard_assess_3',
           value: '3',
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: '4 - Advanced', emoji: true },
-          action_id: 'onboard_level_4',
+          text: { type: 'plain_text', text: 'Advanced', emoji: true },
+          action_id: 'onboard_assess_4',
           value: '4',
-        },
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: '5 - Native/Fluent', emoji: true },
-          action_id: 'onboard_level_5',
-          value: '5',
         },
       ],
     },
@@ -89,31 +84,34 @@ export function buildLevelPickerBlocks(): Record<string, unknown>[] {
       elements: [
         {
           type: 'mrkdwn',
-          text: '_1 = never studied Spanish | 2 = know some basics | 3 = can hold a conversation | 4 = quite fluent | 5 = near native_',
+          text: "_No Spanish = never studied | Some basics = greetings, simple sentences | Conversational = can chat | Advanced = pretty fluent_",
         },
       ],
     },
   ];
 }
 
-// ── Step 3: Level Confirmation + Voice Tutorial ────────────
+// ── Step 3: Placement Result ───────────────────────────────
 
-const LEVEL_DESCRIPTIONS: Record<number, string> = {
-  1: 'Absolute beginner — we\'ll start from scratch, no worries.',
-  2: 'Beginner — you know some basics, we\'ll build on that.',
-  3: 'Intermediate — you can chat, now let\'s polish your skills.',
-  4: 'Advanced — time to talk like a real porteño.',
-  5: 'Expert — we\'ll fine-tune with lunfardo and slang.',
-};
-
-export function buildLevelConfirmationBlocks(level: number): Record<string, unknown>[] {
-  const desc = LEVEL_DESCRIPTIONS[level] ?? '';
+export function buildPlacementSkipBlocks(): Record<string, unknown>[] {
   return [
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Level ${level}* — ${desc}\n\nYou can change your level anytime with \`/gringo level <1-5>\`.`,
+        text: "No worries! We'll start from the very beginning. You'll be placed at *Unit 1* (Level 1).",
+      },
+    },
+  ];
+}
+
+export function buildPlacementStartBlocks(): Record<string, unknown>[] {
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: "Let's find out exactly where you should start. I'll ask you a few quick multiple-choice questions — just tap the answers!",
       },
     },
   ];

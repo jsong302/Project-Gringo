@@ -3,7 +3,7 @@ import { log } from '../utils/logger';
 import { toGringoError } from '../errors/gringoError';
 import { formatUserFacingError } from '../errors/formatUserFacingError';
 import { runWithObservabilityContext, getTraceId } from '../observability/context';
-import { respondEphemeral, buildHelpBlocks } from '../utils/slackHelpers';
+import { respondEphemeral, buildHelpBlocks, postMessage } from '../utils/slackHelpers';
 import { handleRepaso, ensureUser, registerReviewActions } from './reviewHandler';
 import { registerMessageHandlers } from './messageHandler';
 import { handleAdmin } from './adminHandler';
@@ -22,6 +22,17 @@ import { getErrorSummary } from '../services/errorTracker';
 import { getLearnerFacts } from '../services/learnerFacts';
 import { getMemory } from '../services/userMemory';
 import { getUserPlan, formatPlanBlocks, generatePlan, hasPlan } from '../services/lessonPlan';
+import {
+  getCurrentUnit,
+  getUserCurriculumProgress,
+  generateUnitLesson,
+  generateUnitExercise,
+  markUnitPracticing,
+  activateNextUnit,
+  formatLessonBlocks,
+  formatExerciseBlocks,
+} from '../services/curriculumDelivery';
+import { getCurriculumCount } from '../services/curriculum';
 
 const cmdLog = log.withScope('commands');
 
@@ -242,6 +253,88 @@ export function registerCommands(app: App): void {
 
             const planBlocks = formatPlanBlocks(plan);
             await respondEphemeral(respond, 'Your Lesson Plan', planBlocks as any);
+            break;
+          }
+
+          case 'next': {
+            const user = getOrCreateUser(command.user_id);
+
+            // Open a DM channel for lesson delivery
+            const dm = await client.conversations.open({ users: command.user_id });
+            const dmChannel = dm.channel?.id;
+            if (!dmChannel) {
+              await respondEphemeral(respond, 'Could not open a DM with you. Make sure DMs are enabled.');
+              break;
+            }
+
+            let current = getCurrentUnit(user.id);
+
+            // If current unit is passed or no active unit, try to activate next
+            if (!current || current.progress.status === 'passed') {
+              const nextUnit = activateNextUnit(user.id);
+              if (!nextUnit) {
+                await respondEphemeral(respond, "You've completed all available curriculum units! Check back later for new content.");
+                break;
+              }
+              current = getCurrentUnit(user.id);
+            }
+
+            if (!current) {
+              await respondEphemeral(respond, 'No curriculum units available. Ask an admin to check the curriculum.');
+              break;
+            }
+
+            await respondEphemeral(respond, 'Delivering your next lesson via DM...');
+
+            const totalUnits = getCurriculumCount();
+
+            // Generate and send lesson
+            const lessonText = await generateUnitLesson(current.unit, user.id);
+            const lessonBlocks = formatLessonBlocks(current.unit, lessonText, totalUnits);
+            await postMessage(client, dmChannel, `Unit ${current.unit.unitOrder}: ${current.unit.title}`, lessonBlocks as any[]);
+
+            // Generate and send exercise
+            const exerciseText = await generateUnitExercise(current.unit, user.id);
+            const exerciseBlocks = formatExerciseBlocks(exerciseText);
+            await postMessage(client, dmChannel, 'Exercise', exerciseBlocks as any[]);
+
+            // Mark unit as practicing
+            markUnitPracticing(user.id, current.unit.id);
+
+            break;
+          }
+
+          case 'progress': {
+            const user = getOrCreateUser(command.user_id);
+            const progress = getUserCurriculumProgress(user.id);
+
+            const pct = progress.totalCount > 0
+              ? Math.round((progress.completedCount / progress.totalCount) * 100)
+              : 0;
+
+            const blocks = [
+              {
+                type: 'header',
+                text: { type: 'plain_text', text: 'Your Curriculum Progress' },
+              },
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: [
+                    `*Level:* ${progress.level}`,
+                    `*Completed:* ${progress.completedCount}/${progress.totalCount} units (${pct}%)`,
+                    progress.currentUnit
+                      ? `*Current Unit:* ${progress.currentUnit.unitOrder} — ${progress.currentUnit.title}`
+                      : '*Current Unit:* None active',
+                    '',
+                    '_Use `/gringo next` to continue your lessons._',
+                  ].join('\n'),
+                },
+              },
+            ];
+
+            await respondEphemeral(respond, 'Curriculum Progress', blocks as any);
             break;
           }
 

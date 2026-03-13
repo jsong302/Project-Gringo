@@ -80,6 +80,8 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
         type: 'mrkdwn',
         text: [
           '`/gringo help` — This guide',
+          '`/gringo next` — Get your next curriculum lesson via DM',
+          '`/gringo progress` — See your curriculum progress',
           '`/gringo level` — View or change your level (1-5)',
           '`/gringo stats` — Your streak, words learned, and progress',
           '`/gringo profile` — See what the bot knows about you',

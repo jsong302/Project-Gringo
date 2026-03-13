@@ -291,6 +291,50 @@ CREATE TABLE IF NOT EXISTS lesson_plans (
 );
 
 -- ============================================================
+-- Shared Curriculum
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS curriculum_units (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    unit_order INTEGER NOT NULL UNIQUE,
+    topic TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    level_band INTEGER NOT NULL CHECK (level_band BETWEEN 1 AND 5),
+    lesson_prompt TEXT,
+    exercise_prompt TEXT,
+    pass_threshold INTEGER NOT NULL DEFAULT 3,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS user_curriculum_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    unit_id INTEGER NOT NULL REFERENCES curriculum_units(id),
+    status TEXT NOT NULL DEFAULT 'locked'
+        CHECK (status IN ('locked', 'active', 'practicing', 'passed', 'skipped')),
+    best_score INTEGER,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    started_at TEXT,
+    passed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, unit_id)
+);
+
+CREATE TABLE IF NOT EXISTS placement_tests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    questions_json TEXT NOT NULL,
+    results_json TEXT NOT NULL,
+    placed_at_unit INTEGER NOT NULL REFERENCES curriculum_units(id),
+    derived_level INTEGER NOT NULL CHECK (derived_level BETWEEN 1 AND 5),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ============================================================
 -- Indexes
 -- ============================================================
 
@@ -310,3 +354,6 @@ CREATE INDEX IF NOT EXISTS idx_conv_messages_conv ON conversation_messages(conve
 CREATE INDEX IF NOT EXISTS idx_learner_facts_user ON learner_facts(user_id, category);
 CREATE INDEX IF NOT EXISTS idx_review_sessions_user ON review_sessions(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_lesson_plans_user ON lesson_plans(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_curriculum_units_order ON curriculum_units(unit_order);
+CREATE INDEX IF NOT EXISTS idx_user_curriculum_user ON user_curriculum_progress(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_placement_tests_user ON placement_tests(user_id);

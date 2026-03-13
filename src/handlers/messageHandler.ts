@@ -28,6 +28,15 @@ import { getSetting } from '../services/settings';
 import { sendWelcomeDm } from './onboardingHandler';
 import { generatePronunciationAudio } from '../services/pronunciation';
 import { uploadAudioToSlack } from '../utils/slackAudio';
+import { getActiveTest } from '../services/placementTest';
+import {
+  getCurrentUnit,
+  gradeExerciseResponse,
+  markUnitPassed,
+  recordAttempt,
+  activateNextUnit,
+  formatGradeBlocks as formatCurriculumGradeBlocks,
+} from '../services/curriculumDelivery';
 
 const msgLog = log.withScope('message-handler');
 
@@ -194,6 +203,47 @@ export function registerMessageHandlers(app: App): void {
             msgLog.error(`Failed to send onboarding DM to ${slackUserId}: ${err}`);
           }
           return;
+        }
+
+        // ── Placement test gate ──────────────────────────────
+        // If user is mid-placement test, ignore DM messages (test uses buttons)
+        if (channelType === 'im' && getActiveTest(slackUserId)) {
+          await say({ text: 'You have a placement test in progress! Please answer using the buttons above.' });
+          return;
+        }
+
+        // ── Curriculum exercise grading ──────────────────────
+        // If user has a unit in "practicing" status in DM, grade their response
+        if (channelType === 'im' && text) {
+          const current = getCurrentUnit(user.id);
+          if (current && current.progress.status === 'practicing') {
+            msgLog.info(`Grading curriculum exercise for ${slackUserId} (unit ${current.unit.unitOrder})`);
+
+            // Get the exercise text from the unit
+            const exerciseText = current.unit.exercisePrompt ?? current.unit.title;
+            const grade = await gradeExerciseResponse(current.unit, exerciseText, text, user.id);
+
+            if (grade.passed) {
+              const { leveledUp, newLevel } = markUnitPassed(user.id, current.unit.id, grade.score);
+              const blocks = formatCurriculumGradeBlocks(grade, current.unit, true);
+              await say({ text: `Passed! Score: ${grade.score}`, blocks: blocks as any });
+
+              if (leveledUp) {
+                await say({ text: `You've leveled up to *Level ${newLevel}*! Keep it up!` });
+              }
+            } else {
+              const attempts = recordAttempt(user.id, current.unit.id, grade.score);
+              const blocks = formatCurriculumGradeBlocks(grade, current.unit, false);
+              await say({ text: `Score: ${grade.score}`, blocks: blocks as any });
+
+              if (attempts >= 3) {
+                await say({ text: "_Hint: Try reviewing the lesson above and focus on the key vocabulary. You've got this!_" });
+              }
+            }
+
+            updateStreak(user.id);
+            return;
+          }
         }
 
         // Check if there's an active conversation

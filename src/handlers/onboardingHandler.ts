@@ -4,14 +4,13 @@
  * Entry points:
  *  - `team_join` event — fires when a user joins the workspace
  *  - `member_joined_channel` event — fires when a user joins a Gringo channel
- *    (catches users who were already in the workspace but just joined the channel)
  *  - Manual trigger via `/gringo onboard` — re-sends the welcome DM
  *
- * The flow sends a series of DMs: welcome → level picker buttons →
- * voice tutorial → channel guide + first exercise.
- *
- * Level picker buttons trigger `onboard_level_N` actions that set the
- * user's level and continue the flow.
+ * Flow:
+ *  1. Welcome message + self-assessment buttons
+ *  2. "No Spanish" → skip test, place at unit 1
+ *  3. Others → placement test (multiple choice buttons)
+ *  4. Placement result → voice tutorial → channel guide → first exercise
  */
 import type { App } from '@slack/bolt';
 import { log } from '../utils/logger';
@@ -19,18 +18,26 @@ import { getOrCreateUser, updateLevel, markOnboarded, updateDisplayName } from '
 import { postMessage } from '../utils/slackHelpers';
 import {
   buildWelcomeBlocks,
-  buildLevelPickerBlocks,
-  buildLevelConfirmationBlocks,
+  buildSelfAssessmentBlocks,
+  buildPlacementSkipBlocks,
+  buildPlacementStartBlocks,
   buildVoiceTutorialBlocks,
   buildChannelGuideBlocks,
   buildFirstExerciseBlocks,
 } from '../services/onboarding';
-import { generatePlan } from '../services/lessonPlan';
+import {
+  startPlacementTest,
+  processAnswer,
+  getActiveTest,
+  clearActiveTest,
+  formatQuestionBlocks,
+  formatPlacementResultBlocks,
+} from '../services/placementTest';
+import { initializeUserProgress } from '../services/curriculumDelivery';
 
 const onboardLog = log.withScope('onboarding');
 
 // Track users who've already been sent a welcome DM to prevent duplicates
-// (e.g. user joins multiple channels before completing onboarding)
 const welcomeSent = new Set<string>();
 
 // ── Slack profile lookup ────────────────────────────────────
@@ -54,10 +61,7 @@ export async function fetchSlackDisplayName(client: any, slackUserId: string): P
 
 /**
  * Opens a DM with the user and sends the onboarding messages.
- * Steps 1-2 are sent immediately; steps 3-4 are sent after
- * the user picks a level (via button action).
- *
- * Also fetches the user's Slack display name and stores it.
+ * Steps 1-2 are sent immediately; the rest depends on self-assessment.
  */
 export async function sendWelcomeDm(client: any, slackUserId: string): Promise<void> {
   // Open a DM channel
@@ -79,33 +83,27 @@ export async function sendWelcomeDm(client: any, slackUserId: string): Promise<v
   const welcomeBlocks = buildWelcomeBlocks(displayName ?? undefined);
   await postMessage(client, channelId, 'Welcome to Gringo!', welcomeBlocks);
 
-  // Step 2: Level picker
-  const levelBlocks = buildLevelPickerBlocks();
-  await postMessage(client, channelId, 'Pick your level', levelBlocks);
+  // Step 2: Self-assessment buttons
+  const assessBlocks = buildSelfAssessmentBlocks();
+  await postMessage(client, channelId, 'How much Spanish do you know?', assessBlocks);
 
   onboardLog.info(`Welcome DM sent to ${slackUserId}${displayName ? ` (${displayName})` : ''}`);
 }
 
 /**
- * Sends the post-level-selection messages (steps 3-4).
+ * Sends the post-placement messages (voice tutorial, channel guide, first exercise).
  */
-async function sendPostLevelDm(client: any, channelId: string, level: number): Promise<void> {
-  // Step 3: Level confirmation + voice tutorial
-  const confirmBlocks = buildLevelConfirmationBlocks(level);
-  await postMessage(client, channelId, `Level ${level} set`, confirmBlocks);
-
+async function sendPostPlacementDm(client: any, channelId: string, level: number): Promise<void> {
   const voiceBlocks = buildVoiceTutorialBlocks();
   await postMessage(client, channelId, 'Voice memo tutorial', voiceBlocks);
 
-  // Step 4: Channel guide + first exercise
   const guideBlocks = buildChannelGuideBlocks();
   await postMessage(client, channelId, 'Channel guide', guideBlocks);
 
   const exerciseBlocks = buildFirstExerciseBlocks(level);
   await postMessage(client, channelId, 'Your first exercise', exerciseBlocks);
 
-  // Step 5: Completion confirmation
-  await postMessage(client, channelId, "You're all set! Head to any channel and start practicing. Dale! 🇦🇷");
+  await postMessage(client, channelId, "You're all set! Use `/gringo next` to start your first curriculum lesson whenever you're ready. Dale!");
 }
 
 // ── Registration ───────────────────────────────────────────
@@ -148,32 +146,115 @@ export function registerOnboardingHandlers(app: App): void {
     }
   });
 
-  // Level picker button actions (onboard_level_1 through onboard_level_5)
-  for (let level = 1; level <= 5; level++) {
-    app.action(`onboard_level_${level}`, async ({ ack, body, client }) => {
-      await ack();
+  // ── Self-assessment button handlers ──────────────────────
 
+  // "No Spanish" → skip placement test, place at unit 1
+  app.action('onboard_assess_1', async ({ ack, body, client }) => {
+    await ack();
+    const slackUserId = body.user.id;
+    const channelId = (body as any).channel?.id ?? (body as any).container?.channel_id;
+
+    onboardLog.info(`User ${slackUserId} selected "No Spanish" — skipping placement test`);
+
+    try {
+      const user = getOrCreateUser(slackUserId);
+      updateLevel(user.id, 1);
+      initializeUserProgress(user.id, 1);
+      markOnboarded(user.id);
+      welcomeSent.delete(slackUserId);
+
+      if (channelId) {
+        const skipBlocks = buildPlacementSkipBlocks();
+        await postMessage(client, channelId, 'Placed at Unit 1', skipBlocks);
+        await sendPostPlacementDm(client, channelId, 1);
+      }
+    } catch (err) {
+      onboardLog.error(`Failed to handle no-spanish for ${slackUserId}: ${err}`);
+    }
+  });
+
+  // "Some basics" / "Conversational" / "Advanced" → start placement test
+  for (let claimed = 2; claimed <= 4; claimed++) {
+    app.action(`onboard_assess_${claimed}`, async ({ ack, body, client }) => {
+      await ack();
       const slackUserId = body.user.id;
       const channelId = (body as any).channel?.id ?? (body as any).container?.channel_id;
 
-      onboardLog.info(`User ${slackUserId} selected level ${level}`);
+      const labels: Record<number, string> = { 2: 'Some basics', 3: 'Conversational', 4: 'Advanced' };
+      onboardLog.info(`User ${slackUserId} selected "${labels[claimed]}" — starting placement test`);
 
       try {
         const user = getOrCreateUser(slackUserId);
-        updateLevel(user.id, level);
-        markOnboarded(user.id);
-        welcomeSent.delete(slackUserId);
-
-        // Generate personalized lesson plan in the background
-        generatePlan(user.id, level).catch((err) => {
-          onboardLog.error(`Failed to generate lesson plan for ${slackUserId}: ${err}`);
-        });
+        const state = startPlacementTest(user.id, slackUserId, claimed);
 
         if (channelId) {
-          await sendPostLevelDm(client, channelId, level);
+          const startBlocks = buildPlacementStartBlocks();
+          await postMessage(client, channelId, 'Starting placement test', startBlocks);
+
+          // Send first question
+          const firstQ = state.questionPool[0];
+          const qBlocks = formatQuestionBlocks(firstQ, 1, state.questionPool.length);
+          await postMessage(client, channelId, `Question 1/${state.questionPool.length}`, qBlocks);
         }
       } catch (err) {
-        onboardLog.error(`Failed to set level for ${slackUserId}: ${err}`);
+        onboardLog.error(`Failed to start placement test for ${slackUserId}: ${err}`);
+      }
+    });
+  }
+
+  // ── Placement test answer handlers ────────────────────────
+
+  for (let idx = 0; idx < 4; idx++) {
+    app.action(`placement_answer_${idx}`, async ({ ack, body, client }) => {
+      await ack();
+      const slackUserId = body.user.id;
+      const channelId = (body as any).channel?.id ?? (body as any).container?.channel_id;
+
+      try {
+        const result = processAnswer(slackUserId, idx);
+        if (!result) {
+          onboardLog.debug(`No active test for ${slackUserId} or test already complete`);
+          return;
+        }
+
+        if (!channelId) return;
+
+        const emoji = result.correct ? ':white_check_mark:' : ':x:';
+        await postMessage(client, channelId, `${emoji} ${result.correct ? 'Correct!' : 'Not quite.'}`);
+
+        if (result.testComplete) {
+          // Show placement result
+          const state = getActiveTest(slackUserId);
+          const totalCorrect = state
+            ? state.answers.filter((a) => a.correct).length
+            : 0;
+          const totalQuestions = state?.answers.length ?? 0;
+
+          const resultBlocks = formatPlacementResultBlocks(
+            result.placedAtUnit,
+            result.derivedLevel,
+            totalCorrect,
+            totalQuestions,
+          );
+          await postMessage(client, channelId, 'Placement complete!', resultBlocks);
+
+          // Finalize onboarding
+          const user = getOrCreateUser(slackUserId);
+          markOnboarded(user.id);
+          welcomeSent.delete(slackUserId);
+          clearActiveTest(slackUserId);
+
+          await sendPostPlacementDm(client, channelId, result.derivedLevel);
+        } else if (result.nextQuestion) {
+          // Send next question
+          const test = getActiveTest(slackUserId);
+          const qNum = test ? test.currentQuestionIndex + 1 : 0;
+          const total = test ? test.questionPool.length : 0;
+          const qBlocks = formatQuestionBlocks(result.nextQuestion, qNum, total);
+          await postMessage(client, channelId, `Question ${qNum}/${total}`, qBlocks);
+        }
+      } catch (err) {
+        onboardLog.error(`Placement answer error for ${slackUserId}: ${err}`);
       }
     });
   }

@@ -2,7 +2,7 @@
  * Admin Tools — Functions the admin LLM agent can call.
  *
  * Each tool is a pure function that reads/writes the DB and returns
- * a JSON-serializable result. The agent loop in adminAgent.ts
+ * a JSON-serializable result. The charla engine's tool loop
  * dispatches tool calls to these functions.
  */
 import { getDb } from '../db';
@@ -20,6 +20,8 @@ import { getMemory, getMemoryForPrompt } from './userMemory';
 import { listPrompts, upsertPrompt, getPrompt } from './prompts';
 import { updateStreak } from './userService';
 import type { ToolDefinition } from './llm';
+import { getCurriculum, getUnit, updateUnit, reorderUnit, addUnit, archiveUnit } from './curriculum';
+import { getAllUsersProgress, placeUserAtUnit } from './curriculumDelivery';
 
 const toolLog = log.withScope('admin-tools');
 
@@ -87,7 +89,7 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
   // Users
   {
     name: 'list_users',
-    description: 'List all users with their level, XP, streak, and SRS card stats. Gives an overview of the whole group.',
+    description: 'List all users with their level, streak, and SRS card stats. Gives an overview of the whole group.',
     input_schema: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -231,6 +233,88 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
         },
       },
       required: ['phrase'],
+    },
+  },
+
+  // Curriculum
+  {
+    name: 'view_curriculum',
+    description: 'View the full shared curriculum — all units with their level bands, topics, and status.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'view_curriculum_progress',
+    description: "View all users' curriculum progress — current unit, completed count, and level for each user.",
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'edit_curriculum_unit',
+    description: 'Edit a curriculum unit — change title, description, lesson/exercise prompts, pass threshold, or level band.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        unit_id: { type: 'number', description: 'The unit ID to edit' },
+        title: { type: 'string', description: 'New title' },
+        description: { type: 'string', description: 'New description' },
+        lesson_prompt: { type: 'string', description: 'New lesson prompt template' },
+        exercise_prompt: { type: 'string', description: 'New exercise prompt template' },
+        pass_threshold: { type: 'number', description: 'New pass threshold (0-5)' },
+        level_band: { type: 'number', description: 'New level band (1-5)' },
+      },
+      required: ['unit_id'],
+    },
+  },
+  {
+    name: 'reorder_curriculum_unit',
+    description: 'Move a curriculum unit to a new position in the sequence.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        unit_id: { type: 'number', description: 'The unit ID to move' },
+        new_order: { type: 'number', description: 'The new position (unit_order)' },
+      },
+      required: ['unit_id', 'new_order'],
+    },
+  },
+  {
+    name: 'add_curriculum_unit',
+    description: 'Add a new curriculum unit after a specified position.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        after_order: { type: 'number', description: 'Insert after this unit_order (0 = insert at beginning)' },
+        topic: { type: 'string', description: 'Unit topic' },
+        title: { type: 'string', description: 'Unit title' },
+        description: { type: 'string', description: 'Unit description' },
+        level_band: { type: 'number', description: 'Level band (1-5)' },
+        lesson_prompt: { type: 'string', description: 'Lesson prompt template' },
+        exercise_prompt: { type: 'string', description: 'Exercise prompt template' },
+        pass_threshold: { type: 'number', description: 'Pass threshold (0-5, default 3)' },
+      },
+      required: ['after_order', 'topic', 'title', 'level_band'],
+    },
+  },
+  {
+    name: 'archive_curriculum_unit',
+    description: 'Archive (soft-delete) a curriculum unit. It will no longer appear in the active curriculum.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        unit_id: { type: 'number', description: 'The unit ID to archive' },
+      },
+      required: ['unit_id'],
+    },
+  },
+  {
+    name: 'place_user_at_unit',
+    description: "Manually place a user at a specific curriculum unit. Resets their progress — units before the target are marked 'skipped'.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'number', description: 'Internal user ID' },
+        unit_order: { type: 'number', description: 'Unit order number to place them at' },
+      },
+      required: ['user_id', 'unit_order'],
     },
   },
 ];
@@ -526,6 +610,81 @@ register('pronounce', (input) => {
   const phrase = input.phrase as string;
   toolLog.info(`Pronounce requested: "${phrase}"`);
   return JSON.stringify({ status: 'pending', phrase, message: 'Audio pronunciation will be sent as a voice clip.' });
+});
+
+// Curriculum
+register('view_curriculum', () => {
+  const curriculum = getCurriculum();
+  const result = curriculum.map((u) => ({
+    id: u.id,
+    unitOrder: u.unitOrder,
+    topic: u.topic,
+    title: u.title,
+    levelBand: u.levelBand,
+    passThreshold: u.passThreshold,
+    status: u.status,
+    description: u.description?.slice(0, 100),
+  }));
+  return JSON.stringify(result, null, 2);
+});
+
+register('view_curriculum_progress', () => {
+  const progress = getAllUsersProgress();
+  return JSON.stringify(progress, null, 2);
+});
+
+register('edit_curriculum_unit', (input) => {
+  const unitId = input.unit_id as number;
+  const unit = getUnit(unitId);
+  if (!unit) return JSON.stringify({ error: `Unit not found: ${unitId}` });
+
+  const fields: Record<string, unknown> = {};
+  if (input.title) fields.title = input.title;
+  if (input.description) fields.description = input.description;
+  if (input.lesson_prompt) fields.lessonPrompt = input.lesson_prompt;
+  if (input.exercise_prompt) fields.exercisePrompt = input.exercise_prompt;
+  if (input.pass_threshold != null) fields.passThreshold = input.pass_threshold;
+  if (input.level_band != null) fields.levelBand = input.level_band;
+
+  updateUnit(unitId, fields);
+  return JSON.stringify({ success: true, unitId, updated: Object.keys(fields) });
+});
+
+register('reorder_curriculum_unit', (input) => {
+  const unitId = input.unit_id as number;
+  const newOrder = input.new_order as number;
+  reorderUnit(unitId, newOrder);
+  return JSON.stringify({ success: true, unitId, newOrder });
+});
+
+register('add_curriculum_unit', (input) => {
+  const afterOrder = input.after_order as number;
+  const data = {
+    topic: input.topic as string,
+    title: input.title as string,
+    description: (input.description as string) ?? undefined,
+    levelBand: input.level_band as number,
+    lessonPrompt: (input.lesson_prompt as string) ?? undefined,
+    exercisePrompt: (input.exercise_prompt as string) ?? undefined,
+  };
+  const newId = addUnit(afterOrder, data);
+  return JSON.stringify({ success: true, newUnitId: newId, insertedAfterOrder: afterOrder });
+});
+
+register('archive_curriculum_unit', (input) => {
+  const unitId = input.unit_id as number;
+  archiveUnit(unitId);
+  return JSON.stringify({ success: true, unitId, status: 'archived' });
+});
+
+register('place_user_at_unit', (input) => {
+  const userId = input.user_id as number;
+  const unitOrder = input.unit_order as number;
+  const user = getUserById(userId);
+  if (!user) return JSON.stringify({ error: `User not found: ${userId}` });
+
+  placeUserAtUnit(userId, unitOrder);
+  return JSON.stringify({ success: true, userId, placedAtUnit: unitOrder });
 });
 
 register('analyze_error_patterns', () => {

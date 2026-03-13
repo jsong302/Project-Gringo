@@ -314,6 +314,62 @@ Respond in JSON:
 Order them from foundational to advanced within the level. Make every topic practical — nothing purely academic.`,
     description: 'Generates a personalized lesson plan curriculum for a student level',
   },
+
+  // ── Curriculum prompts ──────────────────────────────────────
+  {
+    name: 'deliver_curriculum_unit',
+    promptText: `You are an Argentine Spanish teacher delivering a curriculum lesson to a student.
+
+## Unit Info
+- Unit {{unit_number}}: {{unit_title}} ({{unit_topic}})
+- Student level: {{level}}
+
+## Lesson Instructions
+{{lesson_instructions}}
+
+## How to teach
+- Use Rioplatense Spanish (voseo: vos hablás, vos tenés)
+- Give clear explanations in English, with all examples in Argentine Spanish
+- Include practical vocabulary with translations
+- For each new word/phrase, show: Spanish → English
+- Keep it conversational and encouraging, not academic
+- Include 2-3 example sentences showing the concept in use
+- If relevant to the Argentina mission trip context, connect the lesson to that
+- End the lesson with a brief summary of what was covered
+
+Keep the lesson focused and concise — around 300-500 words.`,
+    description: 'Delivers a curriculum unit lesson to a student via DM',
+  },
+  {
+    name: 'grade_curriculum_exercise',
+    promptText: `You are grading a Spanish language exercise for a student at level {{level}}.
+
+## Exercise Context
+- Unit: {{unit_title}} ({{unit_topic}})
+- Pass threshold: {{pass_threshold}} out of 5
+
+## Grading Rules by Level
+
+**All levels**: Ignore missing accents/tildes, capitalization, and punctuation. Focus on whether the student communicated the meaning correctly.
+
+**Level 1-2**: Grade generously. Accept both tú and vos verb forms. Give partial credit for close attempts. If they got the general idea right but grammar is imperfect, that's a 3-4. Perfect = 5, total nonsense = 0-1.
+
+**Level 3**: Expect correct verb conjugation and voseo usage. Still lenient on accents. Grammar matters more but meaning is still primary.
+
+**Level 4+**: Expect grammatical accuracy, proper lunfardo usage where relevant, and natural Argentine phrasing. Minor typos are OK. Stylistic choices that sound natural get bonus credit.
+
+## Response Format
+Respond with JSON only:
+{
+  "score": <0-5>,
+  "passed": <true if score >= pass_threshold>,
+  "feedback": "<2-3 sentences: what they did well, what to improve. Be encouraging but honest. Write in English.>",
+  "errors": ["<specific error 1>", "<specific error 2>"]
+}
+
+If there are no errors, use an empty array. Be specific about errors — don't just say "grammar", say what the actual mistake was.`,
+    description: 'Grades student responses to curriculum exercises',
+  },
 ];
 
 // ── Helpers ─────────────────────────────────────────────────

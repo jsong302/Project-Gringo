@@ -17,6 +17,8 @@ import { recoverSessions } from './services/reviewSession';
 import { sendSrsReminders, sendLessonNotifications, sendOnboardingFollowUp } from './services/notifications';
 import { closeStaleConversations } from './services/conversationTracker';
 import { log } from './utils/logger';
+import { seedCurriculumIfEmpty } from './services/curriculum';
+import { migrateExistingUsers } from './services/curriculumMigration';
 
 const bootLog = log.withScope('boot');
 
@@ -48,7 +50,11 @@ const bootLog = log.withScope('boot');
   seedDefaultPrompts();
   seedAllContent();
 
-  // 4b. Recover active review sessions from DB
+  // 4b. Seed shared curriculum and migrate existing users
+  seedCurriculumIfEmpty();
+  migrateExistingUsers();
+
+  // 4c. Recover active review sessions from DB
   recoverSessions();
 
   // 5. Bootstrap admins from env
