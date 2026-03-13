@@ -178,6 +178,10 @@ export const DEFAULT_SETTINGS: Array<{ key: string; value: unknown; description:
   // Admin
   { key: 'admin.user_ids', value: [], description: 'Slack user IDs with admin access (JSON array)' },
 
+  // TTS
+  { key: 'tts.voice', value: 'es-AR-ElenaNeural', description: 'Azure TTS voice name' },
+  { key: 'tts.speed', value: 0.85, description: 'TTS speaking rate (0.5=slow, 1.0=normal, 2.0=fast)' },
+
   // Thread
   { key: 'thread.max_history_messages', value: 20, description: 'Max messages loaded from DB for thread context' },
 
