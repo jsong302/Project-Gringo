@@ -57,8 +57,8 @@ function buildSsml(text: string, voice: string, speed: number): string {
 }
 
 /**
- * Build SSML with multiple voice segments (e.g. English + Spanish in one clip).
- * Each segment specifies its own voice and text.
+ * Build SSML with multiple voice segments (e.g. English + Argentine Spanish).
+ * Uses separate voices to keep Elena's authentic Argentine accent for Spanish.
  */
 function buildMultiVoiceSsml(
   segments: Array<{ text: string; voice: string }>,
@@ -160,8 +160,9 @@ export async function synthesizeSpeech(
 }
 
 /**
- * Synthesize a bilingual audio clip mixing English and Spanish voices.
- * Segments alternate between voices in a single audio file.
+ * Synthesize a bilingual audio clip with separate English and Argentine Spanish voices.
+ * Uses two voices to preserve Elena's authentic Argentine accent for Spanish segments.
+ * Default English voice is en-US-AriaNeural (warm, conversational — closest match to Elena's tone).
  */
 export async function synthesizeBilingualSpeech(
   segments: Array<{ text: string; lang: 'en' | 'es' }>,
@@ -175,7 +176,7 @@ export async function synthesizeBilingualSpeech(
   }
 
   const spanishVoice = getSetting('tts.voice', 'es-AR-ElenaNeural') as string;
-  const englishVoice = getSetting('tts.english_voice', 'en-US-JennyNeural') as string;
+  const englishVoice = getSetting('tts.english_voice', 'en-US-AriaNeural') as string;
   const defaultSpeed = getSetting('tts.speed', 1.0) as number;
   const effectiveSpeed = speed ?? defaultSpeed;
   const traceId = getTraceId();
