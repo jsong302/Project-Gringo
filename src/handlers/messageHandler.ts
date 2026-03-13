@@ -234,7 +234,8 @@ export function registerMessageHandlers(app: App): void {
 
             // Get the exercise text from the unit
             const exerciseText = current.unit.exercisePrompt ?? current.unit.title;
-            const grade = await gradeExerciseResponse(current.unit, exerciseText, responseText, user.id);
+            const exerciseInputMode = (audioFile && !text) ? 'voice' as const : 'text' as const;
+            const grade = await gradeExerciseResponse(current.unit, exerciseText, responseText, user.id, exerciseInputMode);
 
             if (grade.passed) {
               const { leveledUp, newLevel } = markUnitPassed(user.id, current.unit.id, grade.score);

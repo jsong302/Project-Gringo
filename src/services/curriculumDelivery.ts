@@ -373,6 +373,7 @@ export async function gradeExerciseResponse(
   exerciseText: string,
   studentResponse: string,
   userId: number,
+  inputMode: 'text' | 'voice' = 'text',
 ): Promise<GradeResult> {
   const user = getUserById(userId);
 
@@ -388,7 +389,7 @@ export async function gradeExerciseResponse(
     system: systemPrompt,
     messages: [{
       role: 'user',
-      content: `Exercise given:\n${exerciseText}\n\nStudent's response:\n${studentResponse}\n\nGrade this response. Return JSON: {"score": 0-5, "passed": boolean, "feedback": "string", "errors": ["string"]}`,
+      content: `Exercise given:\n${exerciseText}\n\nStudent's response${inputMode === 'voice' ? ' (spoken via voice memo, transcribed below)' : ''}:\n${studentResponse}\n\nGrade this response. Return JSON: {"score": 0-5, "passed": boolean, "feedback": "string", "errors": ["string"]}`,
     }],
     temperature: 0.3,
     maxTokens: 512,
