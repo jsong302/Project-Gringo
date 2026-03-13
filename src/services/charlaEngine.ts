@@ -149,11 +149,11 @@ function handleProfileUpdate(userId: number, field: string, value: string): void
 }
 
 /** Execute a tool call and return the result string. */
-function handleToolCall(
+async function handleToolCall(
   toolName: string,
   toolInput: Record<string, unknown>,
   userId?: number,
-): string {
+): Promise<string> {
   // Built-in charla tools
   if (toolName === 'pronounce') {
     return 'Audio pronunciation will be sent as a voice clip.';
@@ -380,7 +380,7 @@ export async function generateCharlaResponse(
         observationCount++;
       }
 
-      const result = handleToolCall(toolUse.name, toolUse.input as Record<string, unknown>, userId);
+      const result = await handleToolCall(toolUse.name, toolUse.input as Record<string, unknown>, userId);
       toolResults.push({
         type: 'tool_result',
         tool_use_id: toolUse.id,

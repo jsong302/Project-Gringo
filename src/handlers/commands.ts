@@ -26,10 +26,13 @@ import { getUserPlan, formatPlanBlocks, generatePlan, hasPlan } from '../service
 import {
   getCurrentUnit,
   getUserCurriculumProgress,
-  generateUnitLesson,
   generateUnitExercise,
   markUnitPracticing,
   activateNextUnit,
+  getLessonFromBank,
+  generateAndBankLesson,
+  getCachedExercise,
+  cacheExercise,
 } from '../services/curriculumDelivery';
 
 const cmdLog = log.withScope('commands');
@@ -286,9 +289,17 @@ export function registerCommands(app: App): void {
             setHomeSession(loadingState);
             publishHomeTab(client, command.user_id).catch(() => {});
 
-            // Generate content
-            const lessonText = await generateUnitLesson(nextCurrent.unit, nextUser.id);
-            const exerciseText = await generateUnitExercise(nextCurrent.unit, nextUser.id);
+            // Load shared lesson from bank (or generate on-demand)
+            let lessonText = getLessonFromBank(nextCurrent.unit.id);
+            if (!lessonText) {
+              lessonText = await generateAndBankLesson(nextCurrent.unit.id);
+            }
+            // Generate per-user exercise (or load from cache)
+            let exerciseText = getCachedExercise(nextUser.id, nextCurrent.unit.id);
+            if (!exerciseText) {
+              exerciseText = await generateUnitExercise(nextCurrent.unit, nextUser.id);
+              cacheExercise(nextUser.id, nextCurrent.unit.id, exerciseText);
+            }
             markUnitPracticing(nextUser.id, nextCurrent.unit.id);
 
             loadingState.lessonText = lessonText;

@@ -15,14 +15,15 @@ import {
   getCurrentUnit,
   getUserCurriculumProgress,
   activateNextUnit,
-  generateUnitLesson,
   generateUnitExercise,
   markUnitPracticing,
   gradeExerciseResponse,
   markUnitPassed,
   recordAttempt,
-  getCachedLessonContent,
-  cacheLessonContent,
+  getLessonFromBank,
+  generateAndBankLesson,
+  getCachedExercise,
+  cacheExercise,
 } from '../services/curriculumDelivery';
 import type { GradeResult } from '../services/curriculumDelivery';
 import { getCurriculumCount, getCurriculum } from '../services/curriculum';
@@ -705,16 +706,13 @@ export function registerHomeHandler(app: App): void {
           return;
         }
 
-        // Check for cached lesson content first
-        const cached = getCachedLessonContent(user.id, current.unit.id);
-        let lessonText: string;
-        let exerciseText: string;
+        // Load shared lesson from bank (or generate on-demand if missing)
+        let lessonText = getLessonFromBank(current.unit.id);
+        // Load per-user cached exercise
+        let exerciseText = getCachedExercise(user.id, current.unit.id);
 
-        if (cached.lessonText && cached.exerciseText) {
-          // Use cached content — no LLM call needed
-          lessonText = cached.lessonText;
-          exerciseText = cached.exerciseText;
-          homeLog.info(`Using cached lesson for ${slackUserId}: Unit ${current.unit.unitOrder}`);
+        if (lessonText && exerciseText) {
+          homeLog.info(`Using cached content for ${slackUserId}: Unit ${current.unit.unitOrder}`);
         } else {
           // Show loading state while generating
           const loadingState = createDefaultSession(user.id, slackUserId);
@@ -724,12 +722,15 @@ export function registerHomeHandler(app: App): void {
           setHomeSession(loadingState);
           await publishHomeTab(client, slackUserId);
 
-          // Generate lesson and exercise
-          lessonText = await generateUnitLesson(current.unit, user.id);
-          exerciseText = await generateUnitExercise(current.unit, user.id);
-
-          // Cache for future visits
-          cacheLessonContent(user.id, current.unit.id, lessonText, exerciseText);
+          // Generate lesson from bank if missing (shared across all users)
+          if (!lessonText) {
+            lessonText = await generateAndBankLesson(current.unit.id);
+          }
+          // Generate per-user exercise if missing
+          if (!exerciseText) {
+            exerciseText = await generateUnitExercise(current.unit, user.id);
+            cacheExercise(user.id, current.unit.id, exerciseText);
+          }
         }
 
         // Mark unit as practicing

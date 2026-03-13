@@ -355,31 +355,128 @@ export function placeUserAtUnit(userId: number, unitOrder: number): void {
   initializeUserProgress(userId, unitOrder);
 }
 
-// ── Lesson/exercise cache ────────────────────────────────────
+// ── Shared lesson bank ──────────────────────────────────────
 
 /**
- * Get cached lesson/exercise text for a user's unit.
+ * Get the shared lesson text from the bank for a unit.
  */
-export function getCachedLessonContent(userId: number, unitId: number): { lessonText: string | null; exerciseText: string | null } {
+export function getLessonFromBank(unitId: number): string | null {
   const db = getDb();
   const result = db.exec(
-    `SELECT lesson_text, exercise_text FROM user_curriculum_progress
-     WHERE user_id = ${userId} AND unit_id = ${unitId}`,
+    `SELECT lesson_text FROM lesson_bank WHERE unit_id = ${unitId}`,
   );
-  if (!result.length || !result[0].values.length) return { lessonText: null, exerciseText: null };
-  const row = result[0].values[0];
-  return { lessonText: row[0] as string | null, exerciseText: row[1] as string | null };
+  if (!result.length || !result[0].values.length) return null;
+  return result[0].values[0][0] as string | null;
 }
 
 /**
- * Save generated lesson/exercise text to the cache.
+ * Save a shared lesson to the bank (insert or replace).
  */
-export function cacheLessonContent(userId: number, unitId: number, lessonText: string, exerciseText: string): void {
+export function saveLessonToBank(unitId: number, lessonText: string): void {
+  const db = getDb();
+  const escaped = lessonText.replace(/'/g, "''");
+  db.run(
+    `INSERT OR REPLACE INTO lesson_bank (unit_id, lesson_text, generated_at)
+     VALUES (${unitId}, '${escaped}', datetime('now'))`,
+  );
+}
+
+/**
+ * Generate and save a lesson to the shared bank for a unit.
+ * Uses the same LLM prompt as user-specific generation, but without
+ * personalization (no user name, memory, or progress context).
+ */
+export async function generateAndBankLesson(unitId: number): Promise<string> {
+  const unit = getUnit(unitId);
+  if (!unit) throw new Error(`Unit not found: ${unitId}`);
+
+  const prompt = unit.lessonPrompt
+    ?? `Teach the following topic: ${unit.title}. ${unit.description ?? ''}`;
+
+  const system = getPromptOrThrow('deliver_curriculum_unit');
+  const systemPrompt = interpolate(system, {
+    level: String(unit.levelBand),
+    unit_number: String(unit.unitOrder),
+    unit_title: unit.title,
+    unit_topic: unit.topic,
+    lesson_instructions: prompt,
+  });
+
+  // Include curriculum context (what prior units teach) so the lesson can reference earlier material
+  const curriculum = getCurriculum();
+  const priorUnits = curriculum
+    .filter(u => u.unitOrder < unit.unitOrder)
+    .map(u => `Unit ${u.unitOrder}: ${u.title} (${u.topic})`)
+    .join('\n');
+  const currCtx = priorUnits
+    ? `\n\n--- Prior Units in Curriculum ---\n${priorUnits}\n\nBuild on what prior units teach. Reference earlier topics when relevant, but don't re-teach them.`
+    : '';
+
+  const fullSystem = systemPrompt + currCtx;
+
+  const response = await callLlm({
+    system: fullSystem,
+    messages: [{ role: 'user', content: 'Deliver this lesson to me.' }],
+    temperature: 0.7,
+    maxTokens: 1024,
+  });
+
+  saveLessonToBank(unitId, response.text);
+  return response.text;
+}
+
+/**
+ * Generate lessons for all units that don't have one in the bank yet.
+ * Returns count of newly generated lessons.
+ */
+export async function generateAllBankLessons(): Promise<{ generated: number; skipped: number; errors: number }> {
+  const units = getCurriculum();
+  let generated = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const unit of units) {
+    const existing = getLessonFromBank(unit.id);
+    if (existing) {
+      skipped++;
+      continue;
+    }
+    try {
+      await generateAndBankLesson(unit.id);
+      generated++;
+      delLog.info(`Generated bank lesson for Unit ${unit.unitOrder}: ${unit.title}`);
+    } catch (err) {
+      errors++;
+      delLog.error(`Failed to generate bank lesson for Unit ${unit.unitOrder}: ${err}`);
+    }
+  }
+
+  return { generated, skipped, errors };
+}
+
+// ── Per-user exercise cache ─────────────────────────────────
+
+/**
+ * Get cached exercise text for a user's unit.
+ */
+export function getCachedExercise(userId: number, unitId: number): string | null {
+  const db = getDb();
+  const result = db.exec(
+    `SELECT exercise_text FROM user_curriculum_progress
+     WHERE user_id = ${userId} AND unit_id = ${unitId}`,
+  );
+  if (!result.length || !result[0].values.length) return null;
+  return result[0].values[0][0] as string | null;
+}
+
+/**
+ * Save generated exercise text to the per-user cache.
+ */
+export function cacheExercise(userId: number, unitId: number, exerciseText: string): void {
   const db = getDb();
   db.run(
     `UPDATE user_curriculum_progress
-     SET lesson_text = '${lessonText.replace(/'/g, "''")}',
-         exercise_text = '${exerciseText.replace(/'/g, "''")}',
+     SET exercise_text = '${exerciseText.replace(/'/g, "''")}',
          updated_at = datetime('now')
      WHERE user_id = ${userId} AND unit_id = ${unitId}`,
   );

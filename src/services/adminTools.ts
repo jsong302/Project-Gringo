@@ -27,7 +27,7 @@ const toolLog = log.withScope('admin-tools');
 
 // ── Tool registry ───────────────────────────────────────────
 
-export type ToolHandler = (input: Record<string, unknown>) => string;
+export type ToolHandler = (input: Record<string, unknown>) => string | Promise<string>;
 
 const handlers = new Map<string, ToolHandler>();
 
@@ -35,14 +35,14 @@ function register(name: string, handler: ToolHandler): void {
   handlers.set(name, handler);
 }
 
-export function executeTool(name: string, input: Record<string, unknown>): string {
+export async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
   const handler = handlers.get(name);
   if (!handler) {
     return JSON.stringify({ error: `Unknown tool: ${name}` });
   }
   try {
     toolLog.info(`Executing tool: ${name}`, { input });
-    const result = handler(input);
+    const result = await handler(input);
     toolLog.debug(`Tool result: ${name}`, { result: result.slice(0, 200) });
     return result;
   } catch (err) {
@@ -316,6 +316,28 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
       },
       required: ['user_id', 'unit_order'],
     },
+  },
+  // Lesson bank
+  {
+    name: 'generate_lesson_bank',
+    description: 'Generate shared lessons for all units that don\'t have one yet. Lessons are shared across all users. Returns count of generated/skipped/errored.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'regenerate_lesson',
+    description: 'Regenerate the shared lesson for a specific unit. Overwrites the existing lesson in the bank. Use this to refresh or fix a lesson.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        unit_id: { type: 'number', description: 'The unit ID to regenerate the lesson for' },
+      },
+      required: ['unit_id'],
+    },
+  },
+  {
+    name: 'view_lesson_bank',
+    description: 'View which units have generated lessons in the bank and which are missing.',
+    input_schema: { type: 'object', properties: {}, required: [] },
   },
 ];
 
@@ -782,5 +804,40 @@ register('analyze_error_patterns', () => {
       byErrorCode: systemBreakdown,
     },
   }, null, 2);
+});
+
+// Lesson bank
+register('view_lesson_bank', () => {
+  const db = getDb();
+  const curriculum = getCurriculum();
+  const bankResult = db.exec('SELECT unit_id, generated_at FROM lesson_bank');
+  const bankMap = new Map<number, string>();
+  if (bankResult.length) {
+    for (const row of bankResult[0].values) {
+      bankMap.set(row[0] as number, row[1] as string);
+    }
+  }
+  const status = curriculum.map(u => ({
+    unitOrder: u.unitOrder,
+    title: u.title,
+    hasLesson: bankMap.has(u.id),
+    generatedAt: bankMap.get(u.id) ?? null,
+  }));
+  const total = curriculum.length;
+  const generated = status.filter(s => s.hasLesson).length;
+  return JSON.stringify({ total, generated, missing: total - generated, units: status }, null, 2);
+});
+
+register('generate_lesson_bank', async () => {
+  const { generateAllBankLessons } = await import('./curriculumDelivery');
+  const result = await generateAllBankLessons();
+  return JSON.stringify({ success: true, ...result });
+});
+
+register('regenerate_lesson', async (input) => {
+  const unitId = input.unit_id as number;
+  const { generateAndBankLesson } = await import('./curriculumDelivery');
+  const lessonText = await generateAndBankLesson(unitId);
+  return JSON.stringify({ success: true, unitId, lessonLength: lessonText.length });
 });
 

@@ -368,6 +368,12 @@ CREATE INDEX IF NOT EXISTS idx_conv_messages_conv ON conversation_messages(conve
 CREATE INDEX IF NOT EXISTS idx_learner_facts_user ON learner_facts(user_id, category);
 CREATE INDEX IF NOT EXISTS idx_review_sessions_user ON review_sessions(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_lesson_plans_user ON lesson_plans(user_id, status);
+CREATE TABLE IF NOT EXISTS lesson_bank (
+    unit_id INTEGER PRIMARY KEY REFERENCES curriculum_units(id),
+    lesson_text TEXT NOT NULL,
+    generated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_curriculum_units_order ON curriculum_units(unit_order);
 CREATE INDEX IF NOT EXISTS idx_user_curriculum_user ON user_curriculum_progress(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_placement_tests_user ON placement_tests(user_id);
