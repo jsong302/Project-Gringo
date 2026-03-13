@@ -48,17 +48,23 @@ async function getBotUserId(client: any): Promise<string> {
 
 /**
  * Check if the bot should respond to this message.
- * Returns true for: DMs or @mentions in any channel.
+ * Returns true for: DMs, @mentions, or messages in monitored channels (lessons, lunfardo).
  */
 async function shouldRespond(
   text: string,
   channelType: string,
+  channelId: string,
   client: any,
 ): Promise<boolean> {
   // Always respond in DMs
   if (channelType === 'im') return true;
 
-  // In channels, only respond when @mentioned
+  // Always respond in monitored lesson/lunfardo channels
+  const lessonsChannel = getSetting('channels.lessons', '');
+  const lunfardoChannel = getSetting('channels.lunfardo', '');
+  if (channelId && (channelId === lessonsChannel || channelId === lunfardoChannel)) return true;
+
+  // In other channels, only respond when @mentioned
   const botId = await getBotUserId(client);
   if (botId && text.includes(`<@${botId}>`)) return true;
 
@@ -174,8 +180,8 @@ export function registerMessageHandlers(app: App): void {
           }
         }
 
-        // Only respond in DMs or when @mentioned
-        if (!await shouldRespond(text, channelType, client)) return;
+        // Only respond in DMs, monitored channels, or when @mentioned
+        if (!await shouldRespond(text, channelType, channelId, client)) return;
 
         const user = getOrCreateUser(slackUserId);
 
