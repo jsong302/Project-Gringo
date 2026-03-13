@@ -1,8 +1,8 @@
 /**
  * Charla Engine — LLM-powered free conversation in Argentine Spanish.
  *
- * Manages conversation context, "no entiendo" detection,
- * English fallback explanations, and pronunciation via tool use.
+ * Manages conversation context and pronunciation via tool use.
+ * The LLM decides when to explain, switch languages, or adjust — no regex.
  */
 import { callLlm, callLlmWithTools } from './llm';
 import type { LlmMessage, ToolDefinition, ToolUseBlock, ToolResultBlock } from './llm';
@@ -23,29 +23,6 @@ export interface CharlaResponse {
   inputTokens: number;
   outputTokens: number;
   pronunciations: string[];  // phrases the LLM wants pronounced
-}
-
-// ── "No entiendo" detection ─────────────────────────────────
-
-const NO_ENTIENDO_PATTERNS = [
-  /\bno\s+entiendo\b/i,
-  /\bno\s+comprendo\b/i,
-  /\bno\s+te\s+entend[íi]\b/i,
-  /\bwhat\s+does\s+that\s+mean\b/i,
-  /\bwhat\s+did\s+you\s+(say|mean)\b/i,
-  /\bi\s+don'?t\s+understand\b/i,
-  /\bexplain\s+that\b/i,
-  /\bqué\s+significa\b/i,
-  /\bcómo\s+se\s+dice\b/i,
-  /\?\?\?/,
-];
-
-/**
- * Detect if the user is asking for help / doesn't understand.
- * Exported for testing.
- */
-export function detectNoEntiendo(text: string): boolean {
-  return NO_ENTIENDO_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 // ── Tools ──────────────────────────────────────────────────
@@ -169,7 +146,8 @@ export function buildMessages(history: Array<{ role: 'user' | 'assistant'; text:
 // ── Core conversation ───────────────────────────────────────
 
 /**
- * Generate a charla response with tool use (pronunciation).
+ * Generate a charla response with tool use (pronunciation, observations, profile updates).
+ * The LLM handles all intent detection — confusion, questions, profile updates, etc.
  */
 export async function generateCharlaResponse(
   userMessage: string,
@@ -260,43 +238,12 @@ export async function generateCharlaResponse(
   };
 }
 
+// ── Main entry point ────────────────────────────────────────
+
 /**
- * Generate an explanation when the user says "no entiendo".
+ * Process a charla message. All intent detection (confusion, questions,
+ * profile updates) is handled by the LLM via tool use and system prompt.
  */
-export async function generateExplanation(
-  lastBotMessage: string,
-  userLevel: number,
-): Promise<CharlaResponse> {
-  const system = `You are a Spanish tutor helping a level ${userLevel} student who didn't understand your last message.
-
-Your last message was: "${lastBotMessage}"
-
-Instructions:
-1. Translate your last message to English
-2. Explain any lunfardo, slang, or tricky grammar you used
-3. If there were any new vocabulary words, list them with meanings
-4. Then say something encouraging in Spanish to continue the conversation
-
-Keep it brief and helpful. Mix English explanation with simple Spanish.`;
-
-  const response = await callLlm({
-    system,
-    messages: [{ role: 'user', content: 'No entiendo, help me' }],
-    temperature: 0.3,
-    maxTokens: 512,
-  });
-
-  return {
-    text: response.text,
-    isExplanation: true,
-    inputTokens: response.inputTokens,
-    outputTokens: response.outputTokens,
-    pronunciations: [],
-  };
-}
-
-// ── Response with "no entiendo" handling ────────────────────
-
 export async function processCharlaMessage(
   userMessage: string,
   conversationHistory: LlmMessage[],
@@ -305,16 +252,5 @@ export async function processCharlaMessage(
   userId?: number,
   displayName?: string,
 ): Promise<CharlaResponse> {
-  if (detectNoEntiendo(userMessage)) {
-    const lastBotMessage = [...conversationHistory]
-      .reverse()
-      .find((m) => m.role === 'assistant');
-
-    if (lastBotMessage) {
-      charlaLog.info('User triggered "no entiendo" — generating explanation');
-      return generateExplanation(lastBotMessage.content as string, userLevel);
-    }
-  }
-
   return generateCharlaResponse(userMessage, conversationHistory, userLevel, memoryContext, userId, displayName);
 }
