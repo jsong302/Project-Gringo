@@ -88,7 +88,7 @@ Be concise and actionable. When making changes, confirm what you did. When analy
   try {
     const users = getAllUsers();
     const userSummary = users.map(
-      (u) => `- ${u.displayName ?? u.slackUserId} (id:${u.id}): level ${u.level}, ${u.xp} XP, ${u.streakDays}-day streak`,
+      (u) => `- ${u.displayName ?? u.slackUserId} (id:${u.id}): level ${u.level}, ${u.streakDays}-day streak`,
     ).join('\n');
     liveContext += `\n### Users (${users.length} total)\n${userSummary}\n`;
   } catch {
@@ -102,7 +102,7 @@ Be concise and actionable. When making changes, confirm what you did. When analy
       if (admin) {
         liveContext += `\n### You are chatting with\n`;
         liveContext += `- Name: ${admin.displayName ?? admin.slackUserId}, internal user_id: ${admin.id}\n`;
-        liveContext += `- Level: ${admin.level}, XP: ${admin.xp}, Streak: ${admin.streakDays} days\n`;
+        liveContext += `- Level: ${admin.level}, Streak: ${admin.streakDays} days\n`;
         const memory = getMemoryForPrompt(adminUserId);
         if (memory) liveContext += `- ${memory}\n`;
       }

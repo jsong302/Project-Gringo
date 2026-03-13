@@ -269,7 +269,6 @@ register('list_users', () => {
       slackUserId: u.slackUserId,
       displayName: u.displayName,
       level: u.level,
-      xp: u.xp,
       streakDays: u.streakDays,
       cards: { total: stats.total, due: stats.due, learning: stats.learning, reviewing: stats.reviewing },
     };
@@ -294,7 +293,6 @@ register('get_user_detail', (input) => {
       slackUserId: user.slackUserId,
       displayName: user.displayName,
       level: user.level,
-      xp: user.xp,
       streakDays: user.streakDays,
       timezone: user.timezone,
       lastPracticeAt: user.lastPracticeAt,
@@ -516,7 +514,6 @@ register('get_learner_context', (input) => {
 
   return JSON.stringify({
     level: user.level,
-    xp: user.xp,
     streakDays: user.streakDays,
     memoryProfile: memoryPrompt || 'No learner profile generated yet',
     srs: stats,
