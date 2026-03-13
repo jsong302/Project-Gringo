@@ -20,7 +20,7 @@ import { getMemory, getMemoryForPrompt } from './userMemory';
 import { listPrompts, upsertPrompt, getPrompt } from './prompts';
 import { updateStreak } from './userService';
 import type { ToolDefinition } from './llm';
-import { getCurriculum, getUnit, updateUnit, reorderUnit, addUnit, archiveUnit } from './curriculum';
+import { getCurriculum, getUnit, updateUnit, reorderUnit, addUnit, archiveUnit, removeUnit } from './curriculum';
 import { getAllUsersProgress, placeUserAtUnit } from './curriculumDelivery';
 
 const toolLog = log.withScope('admin-tools');
@@ -301,6 +301,17 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
       type: 'object',
       properties: {
         unit_id: { type: 'number', description: 'The unit ID to archive' },
+      },
+      required: ['unit_id'],
+    },
+  },
+  {
+    name: 'remove_curriculum_unit',
+    description: 'Permanently delete a curriculum unit and re-compact the ordering. Also removes its lesson bank entry and user progress. Use archive_curriculum_unit for soft-delete instead.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        unit_id: { type: 'number', description: 'The unit ID to permanently delete' },
       },
       required: ['unit_id'],
     },
@@ -697,6 +708,15 @@ register('archive_curriculum_unit', (input) => {
   const unitId = input.unit_id as number;
   archiveUnit(unitId);
   return JSON.stringify({ success: true, unitId, status: 'archived' });
+});
+
+register('remove_curriculum_unit', (input) => {
+  const unitId = input.unit_id as number;
+  const unit = getUnit(unitId);
+  if (!unit) return JSON.stringify({ error: `Unit ${unitId} not found` });
+  const title = unit.title;
+  removeUnit(unitId);
+  return JSON.stringify({ success: true, unitId, title, status: 'permanently_deleted' });
 });
 
 register('place_user_at_unit', (input) => {

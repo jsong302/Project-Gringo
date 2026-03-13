@@ -100,6 +100,7 @@ export async function handleAdmin(
       '- `add unit after <N>` — insert a new unit',
       '- `reorder unit <N> to position <M>` — move a unit',
       '- `archive unit <N>` — soft-delete a unit',
+      '- `remove unit <N>` — permanently delete a unit and re-compact ordering',
       '',
       '*Lesson Bank*',
       '- `generate lesson bank` — generate all missing lessons (background)',

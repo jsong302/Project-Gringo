@@ -122,10 +122,19 @@ export function reorderUnit(unitId: number, newOrder: number): void {
   const oldOrder = unit.unitOrder;
   if (oldOrder === newOrder) return;
 
+  // Temporarily move the target unit out of the way
+  db.run(`UPDATE curriculum_units SET unit_order = -1 WHERE id = ${unitId}`);
+
   if (newOrder > oldOrder) {
-    db.run(`UPDATE curriculum_units SET unit_order = unit_order - 1 WHERE unit_order > ${oldOrder} AND unit_order <= ${newOrder}`);
+    // Shift down: move each unit one step lower, starting from the lowest
+    for (let o = oldOrder + 1; o <= newOrder; o++) {
+      db.run(`UPDATE curriculum_units SET unit_order = ${o - 1} WHERE unit_order = ${o}`);
+    }
   } else {
-    db.run(`UPDATE curriculum_units SET unit_order = unit_order + 1 WHERE unit_order >= ${newOrder} AND unit_order < ${oldOrder}`);
+    // Shift up: move each unit one step higher, starting from the highest
+    for (let o = oldOrder - 1; o >= newOrder; o--) {
+      db.run(`UPDATE curriculum_units SET unit_order = ${o + 1} WHERE unit_order = ${o}`);
+    }
   }
   db.run(`UPDATE curriculum_units SET unit_order = ${newOrder}, updated_at = datetime('now') WHERE id = ${unitId}`);
 }
@@ -136,8 +145,14 @@ export function addUnit(
 ): number {
   const db = getDb();
   const newOrder = afterOrder + 1;
-  // Shift everything after
-  db.run(`UPDATE curriculum_units SET unit_order = unit_order + 1 WHERE unit_order >= ${newOrder}`);
+  // Shift everything after (reverse order to avoid UNIQUE constraint violations)
+  const maxResult = db.exec(`SELECT MAX(unit_order) FROM curriculum_units WHERE unit_order >= ${newOrder}`);
+  const maxOrder = maxResult[0]?.values[0]?.[0] as number | null;
+  if (maxOrder != null) {
+    for (let o = maxOrder; o >= newOrder; o--) {
+      db.run(`UPDATE curriculum_units SET unit_order = ${o + 1} WHERE unit_order = ${o}`);
+    }
+  }
   db.run(
     `INSERT INTO curriculum_units (unit_order, topic, title, description, level_band, lesson_prompt, exercise_prompt)
      VALUES (${newOrder}, '${esc(data.topic)}', '${esc(data.title)}',
@@ -153,6 +168,27 @@ export function addUnit(
 export function archiveUnit(unitId: number): void {
   const db = getDb();
   db.run(`UPDATE curriculum_units SET status = 'archived', updated_at = datetime('now') WHERE id = ${unitId}`);
+}
+
+export function removeUnit(unitId: number): void {
+  const db = getDb();
+  const unit = getUnit(unitId);
+  if (!unit) return;
+  const oldOrder = unit.unitOrder;
+
+  // Delete the unit and related data
+  db.run(`DELETE FROM lesson_bank WHERE unit_id = ${unitId}`);
+  db.run(`DELETE FROM user_curriculum_progress WHERE unit_id = ${unitId}`);
+  db.run(`DELETE FROM curriculum_units WHERE id = ${unitId}`);
+
+  // Compact remaining orders down to fill the gap
+  const maxResult = db.exec(`SELECT MAX(unit_order) FROM curriculum_units`);
+  const maxOrder = maxResult[0]?.values[0]?.[0] as number | null;
+  if (maxOrder != null) {
+    for (let o = oldOrder + 1; o <= maxOrder; o++) {
+      db.run(`UPDATE curriculum_units SET unit_order = ${o - 1} WHERE unit_order = ${o}`);
+    }
+  }
 }
 
 // ── Seeding ─────────────────────────────────────────────────
