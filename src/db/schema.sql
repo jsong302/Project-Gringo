@@ -336,6 +336,17 @@ CREATE TABLE IF NOT EXISTS placement_tests (
 );
 
 -- ============================================================
+-- Home Tab Sessions (persisted state for App Home tab)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS home_sessions (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    slack_user_id TEXT NOT NULL,
+    state_json TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ============================================================
 -- Indexes
 -- ============================================================
 

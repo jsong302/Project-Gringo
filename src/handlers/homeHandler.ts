@@ -1,8 +1,9 @@
 /**
- * App Home Tab Handler — renders the Gringo dashboard when users click the app.
+ * App Home Tab Handler — renders the Gringo dashboard and interactive lesson/exercise/SRS flows.
  *
- * Shows: profile, curriculum progress, current exercise status, stats, quick actions.
- * Refreshes on every `app_home_opened` event.
+ * The Home tab is state-driven: `HomeSessionState.view` determines what's rendered.
+ * Views: dashboard (default), lesson (lesson+exercise), grade (after submission),
+ *        srs_review (card review), srs_summary (review complete).
  */
 import type { App } from '@slack/bolt';
 import { log } from '../utils/logger';
@@ -10,11 +11,35 @@ import { runWithObservabilityContext } from '../observability/context';
 import { getOrCreateUser } from '../services/userService';
 import { getUserCardStats } from '../services/srsRepository';
 import { getErrorSummary } from '../services/errorTracker';
-import { getCurrentUnit, getUserCurriculumProgress } from '../services/curriculumDelivery';
-import { getCurriculumCount } from '../services/curriculum';
+import {
+  getCurrentUnit,
+  getUserCurriculumProgress,
+  activateNextUnit,
+  generateUnitLesson,
+  generateUnitExercise,
+  markUnitPracticing,
+  gradeExerciseResponse,
+  markUnitPassed,
+  recordAttempt,
+} from '../services/curriculumDelivery';
+import type { GradeResult } from '../services/curriculumDelivery';
+import { getCurriculumCount, getCurriculum } from '../services/curriculum';
 import { getMemory } from '../services/userMemory';
+import { updateStreak } from '../services/userService';
+import {
+  getHomeSession,
+  setHomeSession,
+  clearHomeSession,
+  createDefaultSession,
+  publishHomeTab,
+} from '../services/homeSession';
+import type { HomeSessionState } from '../services/homeSession';
+import { generatePronunciationAudio, generateCorrectionAudio } from '../services/pronunciation';
+import { uploadAudioToSlack } from '../utils/slackAudio';
 
 const homeLog = log.withScope('home-tab');
+
+// ── Block Builders ──────────────────────────────────────────
 
 function buildProgressBar(completed: number, total: number, width: number = 20): string {
   if (total === 0) return '░'.repeat(width);
@@ -22,189 +47,606 @@ function buildProgressBar(completed: number, total: number, width: number = 20):
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-function buildHomeBlocks(slackUserId: string): Record<string, unknown>[] {
+function buildProfileBlocks(slackUserId: string): Record<string, unknown>[] {
   const user = getOrCreateUser(slackUserId);
-  const cardStats = getUserCardStats(user.id);
   const progress = getUserCurriculumProgress(user.id);
-  const current = getCurrentUnit(user.id);
-  const errorSummary = getErrorSummary(user.id);
-  const memory = getMemory(user.id);
-  const totalUnits = getCurriculumCount();
-
-  const pct = totalUnits > 0
-    ? Math.round((progress.completedCount / totalUnits) * 100)
-    : 0;
-
-  const blocks: Record<string, unknown>[] = [];
-
-  // ── Header ──────────────────────────────────────────────
-  blocks.push({
-    type: 'header',
-    text: { type: 'plain_text', text: 'Gringo — Your Argentine Spanish Tutor', emoji: true },
-  });
-
-  // ── Profile ─────────────────────────────────────────────
   const responseLabel = user.responseMode === 'voice' ? 'Voice' : 'Text';
   const streakEmoji = user.streakDays >= 7 ? ' :fire:' : '';
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: [
-        `*:bust_in_silhouette: Profile*`,
-        `*Name:* ${user.displayName ?? 'Unknown'}`,
-        `*Level:* ${progress.level}/5  |  *Streak:* ${user.streakDays} day${user.streakDays !== 1 ? 's' : ''}${streakEmoji}`,
-        `*Feedback:* ${responseLabel}  |  *Timezone:* ${user.timezone}`,
-      ].join('\n'),
+
+  return [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: 'Gringo — Your Argentine Spanish Tutor', emoji: true },
     },
-  });
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: [
+          `*:bust_in_silhouette: Profile*`,
+          `*Name:* ${user.displayName ?? 'Unknown'}`,
+          `*Level:* ${progress.level}/5  |  *Streak:* ${user.streakDays} day${user.streakDays !== 1 ? 's' : ''}${streakEmoji}`,
+          `*Feedback:* ${responseLabel}  |  *Timezone:* ${user.timezone}`,
+        ].join('\n'),
+      },
+    },
+  ];
+}
 
-  blocks.push({ type: 'divider' });
-
-  // ── Curriculum Progress ─────────────────────────────────
+function buildProgressBlocks(slackUserId: string): Record<string, unknown>[] {
+  const user = getOrCreateUser(slackUserId);
+  const progress = getUserCurriculumProgress(user.id);
+  const current = getCurrentUnit(user.id);
+  const totalUnits = getCurriculumCount();
+  const pct = totalUnits > 0 ? Math.round((progress.completedCount / totalUnits) * 100) : 0;
   const bar = buildProgressBar(progress.completedCount, totalUnits);
-  const progressLines = [
+
+  const lines = [
     `*:books: Curriculum Progress*   Unit ${progress.completedCount} of ${totalUnits}`,
     `\`${bar}\`  ${pct}%`,
   ];
 
-  // Show recent/current/upcoming units
   if (current) {
-    const unitOrder = current.unit.unitOrder;
-    // Show previous unit if exists
-    if (unitOrder > 1) {
-      progressLines.push(`  :white_check_mark: Unit ${unitOrder - 1} — _completed_`);
-    }
-    const statusLabel = current.progress.status === 'practicing'
-      ? ':arrow_forward: practicing'
-      : ':arrow_forward: active';
-    progressLines.push(`  ${statusLabel} *Unit ${unitOrder} — ${current.unit.title}*`);
-    if (unitOrder < totalUnits) {
-      progressLines.push(`  :lock: Unit ${unitOrder + 1} — _locked_`);
-    }
+    const o = current.unit.unitOrder;
+    if (o > 1) lines.push(`  :white_check_mark: Unit ${o - 1} — _completed_`);
+    const label = current.progress.status === 'practicing' ? ':arrow_forward: practicing' : ':arrow_forward: active';
+    lines.push(`  ${label} *Unit ${o} — ${current.unit.title}*`);
+    if (o < totalUnits) lines.push(`  :lock: Unit ${o + 1} — _locked_`);
   } else if (progress.completedCount === totalUnits && totalUnits > 0) {
-    progressLines.push('  :tada: *All units completed!*');
+    lines.push('  :tada: *All units completed!*');
   } else {
-    progressLines.push('  _No active unit — use `/gringo next` to start_');
+    lines.push('  _No active unit — click Next Unit to start_');
   }
 
-  blocks.push({
-    type: 'section',
-    text: { type: 'mrkdwn', text: progressLines.join('\n') },
-  });
+  return [
+    { type: 'divider' },
+    { type: 'section', text: { type: 'mrkdwn', text: lines.join('\n') } },
+  ];
+}
 
-  // ── Current Exercise ────────────────────────────────────
-  if (current && current.progress.status === 'practicing') {
+function buildStatsBlocks(slackUserId: string): Record<string, unknown>[] {
+  const user = getOrCreateUser(slackUserId);
+  const cardStats = getUserCardStats(user.id);
+  const errorSummary = getErrorSummary(user.id);
+  const progress = getUserCurriculumProgress(user.id);
+  const memory = getMemory(user.id);
+
+  const errorLine = errorSummary.length > 0
+    ? errorSummary.slice(0, 3).map((e) => `${e.category}: ${e.count}`).join(', ')
+    : 'none yet';
+
+  const blocks: Record<string, unknown>[] = [
+    { type: 'divider' },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: [
+          `*:bar_chart: Stats*`,
+          `*SRS Cards:* ${cardStats.total} (${cardStats.due} due)  |  *Units Passed:* ${progress.completedCount}`,
+          `*Common errors:* ${errorLine}`,
+        ].join('\n'),
+      },
+    },
+  ];
+
+  if (memory && memory.profileSummary) {
+    const profileLines = [`*:brain: Learner Profile*`, memory.profileSummary];
+    if (memory.strengths) profileLines.push(`*Strengths:* ${memory.strengths}`);
+    if (memory.weaknesses) profileLines.push(`*Areas to improve:* ${memory.weaknesses}`);
+    blocks.push({ type: 'divider' });
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: profileLines.join('\n') } });
+  }
+
+  return blocks;
+}
+
+function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
+  const user = getOrCreateUser(slackUserId);
+  const cardStats = getUserCardStats(user.id);
+  const current = getCurrentUnit(user.id);
+
+  // Change button label based on whether user has an active lesson
+  const hasActiveLesson = current && (current.progress.status === 'practicing' || current.progress.status === 'active');
+  const state = getHomeSession(user.id);
+  const hasStoredLesson = state?.view === 'lesson' || state?.view === 'grade';
+  const nextLabel = hasActiveLesson || hasStoredLesson
+    ? ':arrow_forward: Continue Lesson'
+    : ':arrow_right: Next Unit';
+
+  const srsLabel = cardStats.due > 0
+    ? `:recycle: Practice SRS (${cardStats.due} due)`
+    : ':recycle: Practice SRS';
+
+  return [
+    { type: 'divider' },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: nextLabel },
+          action_id: 'home_next_unit',
+          style: 'primary',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: srsLabel },
+          action_id: 'home_practice_srs',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: ':books: View Curriculum' },
+          action_id: 'home_view_curriculum',
+        },
+      ],
+    },
+    {
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: '_This dashboard updates each time you open the app._' }],
+    },
+  ];
+}
+
+// ── View: Dashboard ─────────────────────────────────────────
+
+function buildDashboardView(slackUserId: string): Record<string, unknown>[] {
+  return [
+    ...buildProfileBlocks(slackUserId),
+    ...buildProgressBlocks(slackUserId),
+    ...buildStatsBlocks(slackUserId),
+    ...buildDashboardActions(slackUserId),
+  ];
+}
+
+// ── View: Lesson + Exercise ─────────────────────────────────
+
+function buildLessonView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [...buildProfileBlocks(slackUserId)];
+  const unit = state.unit;
+  const totalUnits = getCurriculumCount();
+
+  if (unit && state.lessonText) {
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'header',
+      text: { type: 'plain_text', text: `Unit ${unit.unitOrder} of ${totalUnits}: ${unit.title}`, emoji: true },
+    });
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `_Level ${unit.levelBand} | ${unit.topic}_` }],
+    });
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: state.lessonText },
+    });
+  }
+
+  if (state.exerciseText) {
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*:pencil2: Exercise*\n\n${state.exerciseText}` },
+    });
+
+    const user = getOrCreateUser(slackUserId);
+    const current = getCurrentUnit(user.id);
+    const attempts = current?.progress.attempts ?? 0;
+    const threshold = unit?.passThreshold ?? 3;
+    const attemptLine = attempts > 0
+      ? `Attempts: ${attempts}  |  Need: ${threshold}/5 to pass`
+      : `Need: ${threshold}/5 to pass`;
+
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: attemptLine }],
+    });
+
+    blocks.push({
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: ':memo: Answer' },
+          action_id: 'home_exercise_answer',
+          style: 'primary',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: ':microphone: Send voice memo in DMs' },
+          action_id: 'home_voice_hint',
+        },
+      ],
+    });
+  }
+
+  return blocks;
+}
+
+// ── View: Grade Feedback ────────────────────────────────────
+
+function buildGradeView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [...buildProfileBlocks(slackUserId)];
+  const grade = state.lastGradeResult;
+  const unit = state.unit;
+
+  if (!grade || !unit) return buildDashboardView(slackUserId);
+
+  if (grade.passed) {
+    // ── Pass view ──
+    blocks.push(...buildProgressBlocks(slackUserId));
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `:white_check_mark: *Unit ${unit.unitOrder}: ${unit.title}* — Passed (${grade.score}/5)\n\n:tada: ${grade.feedback}`,
+      },
+    });
+    blocks.push(...buildStatsBlocks(slackUserId));
+    blocks.push(...buildDashboardActions(slackUserId));
+  } else {
+    // ── Fail view ──
+    // Show the exercise text so the user remembers the question
+    if (state.exerciseText) {
+      blocks.push({ type: 'divider' });
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*:pencil2: Exercise*\n\n${state.exerciseText}` },
+      });
+    }
+
     blocks.push({ type: 'divider' });
 
-    const attemptLine = current.progress.attempts > 0
-      ? `Attempts: ${current.progress.attempts}  |  Need: ${current.unit.passThreshold}/5 to pass`
-      : `Need: ${current.unit.passThreshold}/5 to pass`;
+    const lines = [
+      `:x: *Score: ${grade.score}/5* — need ${unit.passThreshold} to pass`,
+      '',
+      grade.feedback,
+    ];
+
+    if (grade.errors.length > 0) {
+      lines.push('', '*Errors to work on:*');
+      for (const err of grade.errors) {
+        lines.push(`• ${err}`);
+      }
+    }
+
+    if (grade.correction) {
+      lines.push('', `*Correct answer:* _${grade.correction}_`);
+    }
+
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: lines.join('\n') },
+    });
+
+    const user = getOrCreateUser(slackUserId);
+    const current = getCurrentUnit(user.id);
+    const attempts = current?.progress.attempts ?? 0;
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `Attempts: ${attempts}  |  Need: ${unit.passThreshold}/5 to pass` }],
+    });
+
+    blocks.push({
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: ':memo: Try Again' },
+          action_id: 'home_exercise_answer',
+          style: 'primary',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: ':microphone: Send voice memo in DMs' },
+          action_id: 'home_voice_hint',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Dashboard' },
+          action_id: 'home_back_dashboard',
+        },
+      ],
+    });
+  }
+
+  return blocks;
+}
+
+// ── View: SRS Review ────────────────────────────────────────
+
+function buildSrsReviewView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [];
+  const review = state.srsReview;
+
+  if (!review || review.currentIndex >= review.cardIds.length) {
+    return buildSrsSummaryView(slackUserId, state);
+  }
+
+  const { getCardById } = require('../services/srsRepository');
+  const { getCardContent } = require('../services/cardContent');
+
+  const card = getCardById(review.cardIds[review.currentIndex]);
+  const content = card ? getCardContent(card) : null;
+
+  blocks.push({
+    type: 'header',
+    text: { type: 'plain_text', text: `SRS Review — Card ${review.currentIndex + 1} of ${review.cardIds.length}`, emoji: true },
+  });
+  blocks.push({ type: 'divider' });
+
+  if (content) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*${content.front}*` },
+    });
+
+    if (review.showingAnswer) {
+      blocks.push({ type: 'divider' });
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: content.back },
+      });
+      if (content.example) {
+        blocks.push({
+          type: 'context',
+          elements: [{ type: 'mrkdwn', text: `_${content.example}_` }],
+        });
+      }
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: '_How well did you know it?_' },
+      });
+      blocks.push({
+        type: 'actions',
+        elements: [
+          { type: 'button', text: { type: 'plain_text', text: 'Again' }, action_id: 'home_srs_again', style: 'danger' },
+          { type: 'button', text: { type: 'plain_text', text: 'Hard' }, action_id: 'home_srs_hard' },
+          { type: 'button', text: { type: 'plain_text', text: 'Good' }, action_id: 'home_srs_good', style: 'primary' },
+          { type: 'button', text: { type: 'plain_text', text: 'Easy' }, action_id: 'home_srs_easy' },
+        ],
+      });
+    } else {
+      blocks.push({
+        type: 'actions',
+        elements: [
+          { type: 'button', text: { type: 'plain_text', text: 'Show Answer' }, action_id: 'home_srs_show', style: 'primary' },
+          { type: 'button', text: { type: 'plain_text', text: 'Quit Review' }, action_id: 'home_srs_quit' },
+        ],
+      });
+    }
+  } else {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: '_Card content not found. Skipping..._' },
+    });
+  }
+
+  return blocks;
+}
+
+// ── View: SRS Summary ───────────────────────────────────────
+
+function buildSrsSummaryView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
+  const review = state.srsReview;
+  const blocks: Record<string, unknown>[] = [];
+
+  blocks.push({
+    type: 'header',
+    text: { type: 'plain_text', text: 'SRS Review Complete!', emoji: true },
+  });
+  blocks.push({ type: 'divider' });
+
+  if (review) {
+    const counts = { again: 0, hard: 0, good: 0, easy: 0 };
+    for (const r of review.results) {
+      if (r.quality <= 1) counts.again++;
+      else if (r.quality === 2) counts.hard++;
+      else if (r.quality <= 4) counts.good++;
+      else counts.easy++;
+    }
 
     blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
         text: [
-          `*:memo: Current Exercise*`,
-          `Unit ${current.unit.unitOrder}: *${current.unit.title}*`,
-          `${attemptLine}`,
-          '',
-          ':speech_balloon: _Reply in your DMs to answer_',
+          `*Reviewed:* ${review.results.length} cards`,
+          `Again: ${counts.again}  |  Hard: ${counts.hard}  |  Good: ${counts.good}  |  Easy: ${counts.easy}`,
         ].join('\n'),
       },
     });
   }
 
-  blocks.push({ type: 'divider' });
-
-  // ── Stats ───────────────────────────────────────────────
-  const errorLine = errorSummary.length > 0
-    ? errorSummary.slice(0, 3).map((e) => `${e.category}: ${e.count}`).join(', ')
-    : 'none yet';
-
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: [
-        `*:bar_chart: Stats*`,
-        `*SRS Cards:* ${cardStats.total} (${cardStats.due} due)  |  *Units Passed:* ${progress.completedCount}`,
-        `*Common errors:* ${errorLine}`,
-      ].join('\n'),
-    },
-  });
-
-  // ── Learner profile summary ─────────────────────────────
-  if (memory && memory.profileSummary) {
-    blocks.push({ type: 'divider' });
-    const profileLines = [`*:brain: Learner Profile*`, memory.profileSummary];
-    if (memory.strengths) profileLines.push(`*Strengths:* ${memory.strengths}`);
-    if (memory.weaknesses) profileLines.push(`*Areas to improve:* ${memory.weaknesses}`);
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: profileLines.join('\n') },
-    });
-  }
-
-  blocks.push({ type: 'divider' });
-
-  // ── Quick Actions ───────────────────────────────────────
-  const actions: Record<string, unknown>[] = [
-    {
-      type: 'button',
-      text: { type: 'plain_text', text: ':arrow_right: Next Unit' },
-      action_id: 'home_next_unit',
-      style: 'primary',
-    },
-    {
-      type: 'button',
-      text: { type: 'plain_text', text: ':recycle: Practice SRS' },
-      action_id: 'home_practice_srs',
-    },
-  ];
-
-  if (cardStats.due > 0) {
-    actions[1] = {
-      ...actions[1],
-      text: { type: 'plain_text', text: `:recycle: Practice SRS (${cardStats.due} due)` },
-    };
-  }
-
   blocks.push({
     type: 'actions',
-    elements: actions,
-  });
-
-  blocks.push({
-    type: 'context',
-    elements: [{ type: 'mrkdwn', text: '_This dashboard updates each time you open the app._' }],
+    elements: [
+      {
+        type: 'button',
+        text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Dashboard' },
+        action_id: 'home_back_dashboard',
+        style: 'primary',
+      },
+    ],
   });
 
   return blocks;
 }
 
+// ── View: Curriculum Browser ────────────────────────────────
+
+function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
+  const user = getOrCreateUser(slackUserId);
+  const units = getCurriculum();
+  const current = getCurrentUnit(user.id);
+  const progress = getUserCurriculumProgress(user.id);
+
+  // Build a lookup of unit statuses
+  const { getDb } = require('../db');
+  const db = getDb();
+  const progressResult = db.exec(
+    `SELECT unit_id, status, best_score FROM user_curriculum_progress WHERE user_id = ${user.id}`,
+  );
+  const unitStatus = new Map<number, { status: string; bestScore: number | null }>();
+  if (progressResult.length) {
+    for (const row of progressResult[0].values) {
+      unitStatus.set(row[0] as number, {
+        status: row[1] as string,
+        bestScore: row[2] as number | null,
+      });
+    }
+  }
+
+  const blocks: Record<string, unknown>[] = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: 'Curriculum', emoji: true },
+    },
+    {
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `${progress.completedCount}/${units.length} units completed` }],
+    },
+    { type: 'divider' },
+  ];
+
+  // Group units by level band
+  let currentBand = 0;
+  for (const unit of units) {
+    if (unit.levelBand !== currentBand) {
+      currentBand = unit.levelBand;
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Level ${currentBand}*` },
+      });
+    }
+
+    const prog = unitStatus.get(unit.id);
+    const status = prog?.status ?? 'locked';
+    let icon: string;
+    let suffix = '';
+    switch (status) {
+      case 'passed':
+        icon = ':white_check_mark:';
+        suffix = prog?.bestScore != null ? ` (${prog.bestScore}/5)` : '';
+        break;
+      case 'practicing':
+        icon = ':arrow_forward:';
+        suffix = ' — _in progress_';
+        break;
+      case 'active':
+        icon = ':radio_button:';
+        suffix = ' — _ready_';
+        break;
+      case 'skipped':
+        icon = ':fast_forward:';
+        suffix = ' — _skipped_';
+        break;
+      default:
+        icon = ':lock:';
+        break;
+    }
+
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `${icon}  *${unit.unitOrder}.* ${unit.title}${suffix}` }],
+    });
+  }
+
+  // Slack Home tab has a 100-block limit — truncate if needed
+  if (blocks.length > 95) {
+    blocks.splice(95);
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: '_... and more units. Use `/gringo progress` for the full list._' }],
+    });
+  }
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'actions',
+    elements: [
+      {
+        type: 'button',
+        text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Dashboard' },
+        action_id: 'home_back_dashboard',
+        style: 'primary',
+      },
+    ],
+  });
+
+  return blocks;
+}
+
+// ── Main block builder (exported for publishHomeTab) ────────
+
+export function buildHomeBlocks(slackUserId: string): Record<string, unknown>[] {
+  const user = getOrCreateUser(slackUserId);
+
+  // Show welcome screen for users who haven't completed onboarding
+  if (!user.onboarded) {
+    return [
+      {
+        type: 'header',
+        text: { type: 'plain_text', text: 'Gringo — Your Argentine Spanish Tutor', emoji: true },
+      },
+      { type: 'divider' },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: [
+            ':wave: *Welcome to Gringo!*',
+            '',
+            'I\'m your personal Argentine Spanish tutor. Before we get started, I need to set up your profile.',
+            '',
+            ':speech_balloon: *Check your DMs* — I sent you a welcome message to get you set up with a quick placement test and your preferences.',
+            '',
+            'Once you\'re onboarded, this Home tab will be your dashboard for lessons, exercises, SRS reviews, and progress tracking.',
+          ].join('\n'),
+        },
+      },
+      {
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: '_This page will update automatically once setup is complete._' }],
+      },
+    ];
+  }
+
+  const state = getHomeSession(user.id);
+
+  if (!state || state.view === 'dashboard') {
+    return buildDashboardView(slackUserId);
+  }
+
+  switch (state.view) {
+    case 'lesson':
+      return buildLessonView(slackUserId, state);
+    case 'grade':
+      return buildGradeView(slackUserId, state);
+    case 'srs_review':
+      return buildSrsReviewView(slackUserId, state);
+    case 'srs_summary':
+      return buildSrsSummaryView(slackUserId, state);
+    case 'curriculum':
+      return buildCurriculumView(slackUserId);
+    default:
+      return buildDashboardView(slackUserId);
+  }
+}
+
 // ── Registration ────────────────────────────────────────────
 
 export function registerHomeHandler(app: App): void {
+  // ── Render on open ──────────────────────────────────────
   app.event('app_home_opened', async ({ event, client }) => {
     await runWithObservabilityContext(async () => {
       const slackUserId = event.user;
-
-      // Only render the Home tab (not Messages tab)
       if ((event as any).tab !== 'home') return;
 
       try {
-        const blocks = buildHomeBlocks(slackUserId);
-
-        await client.views.publish({
-          user_id: slackUserId,
-          view: {
-            type: 'home',
-            blocks: blocks as any,
-          },
-        });
-
+        await publishHomeTab(client, slackUserId);
         homeLog.debug(`Home tab rendered for ${slackUserId}`);
       } catch (err) {
         homeLog.error(`Failed to render Home tab for ${slackUserId}: ${err}`);
@@ -212,7 +654,7 @@ export function registerHomeHandler(app: App): void {
     });
   });
 
-  // ── Quick Action: Next Unit ───────────────────────────────
+  // ── Next Unit ───────────────────────────────────────────
   app.action('home_next_unit', async ({ ack, body, client }) => {
     await ack();
 
@@ -220,77 +662,249 @@ export function registerHomeHandler(app: App): void {
       const slackUserId = body.user.id;
 
       try {
-        // Open DM and send a hint — reuse the same /gringo next logic via DM
-        const dm = await client.conversations.open({ users: slackUserId });
-        const dmChannel = dm.channel?.id;
-        if (!dmChannel) return;
+        const user = getOrCreateUser(slackUserId);
 
-        await client.chat.postMessage({
-          channel: dmChannel,
-          text: '_Loading your next unit..._\nTip: You can also use `/gringo next` anytime.',
-        });
+        // If there's already a lesson loaded, just show it (prevents double-click regeneration)
+        const existingState = getHomeSession(user.id);
+        if (existingState?.view === 'lesson' && existingState.lessonText && existingState.exerciseText
+            && existingState.lessonText !== '_Generating your lesson..._') {
+          await publishHomeTab(client, slackUserId);
+          return;
+        }
 
-        // Trigger the /gringo next flow by importing the delivery functions
-        const { activateNextUnit, generateUnitLesson, generateUnitExercise, formatLessonBlocks, formatExerciseBlocks, markUnitPracticing, trackUnitMessage, clearTrackedMessages } = await import('../services/curriculumDelivery');
-        const { getCurriculumCount: getCount } = await import('../services/curriculum');
-        const { postMessage } = await import('../utils/slackHelpers');
-        const { getOrCreateUser: getUser } = await import('../services/userService');
-
-        const user = getUser(slackUserId);
         let current = getCurrentUnit(user.id);
 
         if (!current || current.progress.status === 'passed') {
           const nextUnit = activateNextUnit(user.id);
           if (!nextUnit) {
-            await client.chat.postMessage({
-              channel: dmChannel,
-              text: "You've completed all available curriculum units! Check back later for new content.",
-            });
+            clearHomeSession(user.id);
+            await publishHomeTab(client, slackUserId);
             return;
           }
           current = getCurrentUnit(user.id);
         }
 
         if (!current) {
-          await client.chat.postMessage({
-            channel: dmChannel,
-            text: 'No curriculum units available. Ask an admin to check the curriculum.',
-          });
+          clearHomeSession(user.id);
+          await publishHomeTab(client, slackUserId);
           return;
         }
 
-        // Clear old tracked messages
-        const oldMsgs = clearTrackedMessages(user.id);
-        for (const msgTs of oldMsgs) {
-          try { await client.chat.delete({ channel: dmChannel, ts: msgTs }); } catch { /* ignore */ }
-        }
+        // Show loading state
+        const loadingState = createDefaultSession(user.id, slackUserId);
+        loadingState.view = 'lesson';
+        loadingState.unit = current.unit;
+        loadingState.lessonText = '_Generating your lesson..._';
+        setHomeSession(loadingState);
+        await publishHomeTab(client, slackUserId);
 
-        const total = getCount();
+        // Generate lesson and exercise
         const lessonText = await generateUnitLesson(current.unit, user.id);
-        const lessonBlocks = formatLessonBlocks(current.unit, lessonText, total);
-        const lessonTs = await postMessage(client, dmChannel, `Unit ${current.unit.unitOrder}: ${current.unit.title}`, lessonBlocks as any[]);
-        trackUnitMessage(user.id, lessonTs);
-
         const exerciseText = await generateUnitExercise(current.unit, user.id);
-        const exerciseBlocks = formatExerciseBlocks(exerciseText);
-        const exerciseTs = await postMessage(client, dmChannel, 'Exercise', exerciseBlocks as any[]);
-        trackUnitMessage(user.id, exerciseTs);
 
+        // Mark unit as practicing
         markUnitPracticing(user.id, current.unit.id);
 
-        // Refresh Home tab
-        const blocks = buildHomeBlocks(slackUserId);
-        await client.views.publish({
-          user_id: slackUserId,
-          view: { type: 'home', blocks: blocks as any },
-        });
+        // Update state with content
+        loadingState.lessonText = lessonText;
+        loadingState.exerciseText = exerciseText;
+        setHomeSession(loadingState);
+        await publishHomeTab(client, slackUserId);
+
+        homeLog.info(`Lesson delivered on Home tab for ${slackUserId}: Unit ${current.unit.unitOrder}`);
       } catch (err) {
         homeLog.error(`Home next-unit action failed: ${err}`);
+        // Fall back to dashboard on error
+        const user = getOrCreateUser(slackUserId);
+        clearHomeSession(user.id);
+        await publishHomeTab(client, slackUserId);
       }
     });
   });
 
-  // ── Quick Action: Practice SRS ────────────────────────────
+  // ── Exercise Answer (open modal) ────────────────────────
+  app.action('home_exercise_answer', async ({ ack, body, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      try {
+        await client.views.open({
+          trigger_id: (body as any).trigger_id,
+          view: {
+            type: 'modal',
+            callback_id: 'exercise_answer_modal',
+            title: { type: 'plain_text', text: 'Your Answer' },
+            submit: { type: 'plain_text', text: 'Submit' },
+            blocks: [
+              {
+                type: 'input',
+                block_id: 'answer_block',
+                label: { type: 'plain_text', text: 'Type your answer in Spanish' },
+                element: {
+                  type: 'plain_text_input',
+                  action_id: 'answer_input',
+                  multiline: true,
+                  placeholder: { type: 'plain_text', text: 'Escribí tu respuesta acá...' },
+                },
+              },
+            ],
+          },
+        });
+      } catch (err) {
+        homeLog.error(`Failed to open exercise modal: ${err}`);
+      }
+    });
+  });
+
+  // ── Exercise Answer (modal submission) ──────────────────
+  app.view('exercise_answer_modal', async ({ ack, body, view, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+
+      try {
+        const answer = view.state.values.answer_block.answer_input.value ?? '';
+        const user = getOrCreateUser(slackUserId);
+        const state = getHomeSession(user.id);
+        const current = getCurrentUnit(user.id);
+
+        if (!current || !state?.unit) {
+          clearHomeSession(user.id);
+          await publishHomeTab(client, slackUserId);
+          return;
+        }
+
+        const exerciseText = state.unit.exercisePrompt ?? state.unit.title;
+        const grade = await gradeExerciseResponse(current.unit, exerciseText, answer, user.id, 'text');
+
+        // If the LLM says it's not an attempt, notify the user and stay in lesson view
+        if (!grade.isAttempt) {
+          homeLog.info(`Non-exercise response in modal from ${slackUserId}: "${answer.slice(0, 60)}"`);
+          // Notify via DM since we can't update the modal after ack
+          try {
+            const dm = await client.conversations.open({ users: slackUserId });
+            if (dm.channel?.id) {
+              await client.chat.postMessage({
+                channel: dm.channel.id,
+                text: ':thinking_face: That didn\'t look like an exercise answer. Try responding in Spanish to the exercise prompt. If you have a question, chat with me here in DMs!',
+              });
+            }
+          } catch { /* best effort */ }
+          return;
+        }
+
+        if (grade.passed) {
+          const { leveledUp, newLevel } = markUnitPassed(user.id, current.unit.id, grade.score);
+          updateStreak(user.id);
+
+          // Update state to show pass
+          state.view = 'grade';
+          state.lastGradeResult = grade;
+          setHomeSession(state);
+          await publishHomeTab(client, slackUserId);
+
+          // Send pronunciation audio in DM if there's a correction
+          if (grade.correction) {
+            try {
+              const dm = await client.conversations.open({ users: slackUserId });
+              const dmChannel = dm.channel?.id;
+              if (dmChannel) {
+                const audioBuffers = await generatePronunciationAudio([grade.correction]);
+                if (audioBuffers[0]) {
+                  await uploadAudioToSlack(client, dmChannel, audioBuffers[0], grade.correction);
+                }
+              }
+            } catch { /* audio is best-effort */ }
+          }
+
+          homeLog.info(`Unit ${current.unit.unitOrder} passed via Home tab by ${slackUserId} (${grade.score}/5)`);
+        } else {
+          recordAttempt(user.id, current.unit.id, grade.score);
+          updateStreak(user.id);
+
+          state.view = 'grade';
+          state.lastGradeResult = grade;
+          setHomeSession(state);
+          await publishHomeTab(client, slackUserId);
+
+          // Send audio feedback in DM based on response mode
+          if (grade.correction) {
+            try {
+              const dm = await client.conversations.open({ users: slackUserId });
+              const dmChannel = dm.channel?.id;
+              if (dmChannel) {
+                if (user.responseMode === 'voice') {
+                  const audio = await generateCorrectionAudio(grade.feedback, grade.correction);
+                  if (audio) {
+                    await uploadAudioToSlack(client, dmChannel, audio, `Correction: ${grade.correction}`);
+                  }
+                } else {
+                  const audioBuffers = await generatePronunciationAudio([grade.correction]);
+                  if (audioBuffers[0]) {
+                    await uploadAudioToSlack(client, dmChannel, audioBuffers[0], grade.correction);
+                  }
+                }
+              }
+            } catch { /* audio is best-effort */ }
+          }
+
+          homeLog.info(`Exercise failed via Home tab by ${slackUserId} (${grade.score}/5)`);
+        }
+      } catch (err) {
+        homeLog.error(`Exercise grading failed: ${err}`);
+      }
+    });
+  });
+
+  // ── Voice hint (just notify them to use DMs) ────────────
+  app.action('home_voice_hint', async ({ ack, body, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      try {
+        const dm = await client.conversations.open({ users: slackUserId });
+        const dmChannel = dm.channel?.id;
+        if (dmChannel) {
+          await client.chat.postMessage({
+            channel: dmChannel,
+            text: ':microphone: Send a voice memo here with your answer and I\'ll grade it!',
+          });
+        }
+      } catch (err) {
+        homeLog.error(`Voice hint failed: ${err}`);
+      }
+    });
+  });
+
+  // ── Back to Dashboard ───────────────────────────────────
+  app.action('home_back_dashboard', async ({ ack, body, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      const user = getOrCreateUser(slackUserId);
+      clearHomeSession(user.id);
+      await publishHomeTab(client, slackUserId);
+    });
+  });
+
+  // ── View Curriculum ──────────────────────────────────────
+  app.action('home_view_curriculum', async ({ ack, body, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      const user = getOrCreateUser(slackUserId);
+      const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+      state.view = 'curriculum';
+      setHomeSession(state);
+      await publishHomeTab(client, slackUserId);
+    });
+  });
+
+  // ── SRS: Practice ───────────────────────────────────────
   app.action('home_practice_srs', async ({ ack, body, client }) => {
     await ack();
 
@@ -298,35 +912,126 @@ export function registerHomeHandler(app: App): void {
       const slackUserId = body.user.id;
 
       try {
-        const dm = await client.conversations.open({ users: slackUserId });
-        const dmChannel = dm.channel?.id;
-        if (!dmChannel) return;
+        const user = getOrCreateUser(slackUserId);
+        const { getCardsDue } = require('../services/srsRepository');
+        const cards = getCardsDue(user.id);
 
-        await client.chat.postMessage({
-          channel: dmChannel,
-          text: '_Starting your SRS review..._\nTip: You can also use `/gringo repaso` anytime.',
-        });
+        if (cards.length === 0) {
+          // Show a brief "no cards" message then stay on dashboard
+          // Use Slack's response_url isn't available here, so post a DM
+          try {
+            const dm = await client.conversations.open({ users: slackUserId });
+            if (dm.channel?.id) {
+              await client.chat.postMessage({
+                channel: dm.channel.id,
+                text: ':white_check_mark: No SRS cards due right now! Check back later.',
+              });
+            }
+          } catch { /* best effort */ }
+          await publishHomeTab(client, slackUserId);
+          return;
+        }
 
-        const { ensureUser, handleRepaso } = await import('./reviewHandler');
-        const userId = ensureUser(slackUserId);
+        const maxCards = 10;
+        const reviewCards = cards.slice(0, maxCards);
 
-        // Use a simple respond wrapper that posts to DM
-        const respond = async (msg: any) => {
-          const text = typeof msg === 'string' ? msg : (msg.text ?? '');
-          const blocks = typeof msg === 'object' ? msg.blocks : undefined;
-          await client.chat.postMessage({
-            channel: dmChannel!,
-            text,
-            blocks,
-          });
+        const state = createDefaultSession(user.id, slackUserId);
+        state.view = 'srs_review';
+        state.srsReview = {
+          cardIds: reviewCards.map((c: any) => c.id),
+          currentIndex: 0,
+          showingAnswer: false,
+          results: [],
         };
+        setHomeSession(state);
+        await publishHomeTab(client, slackUserId);
 
-        await handleRepaso(userId, dmChannel, respond);
+        homeLog.info(`SRS review started on Home tab for ${slackUserId}: ${reviewCards.length} cards`);
       } catch (err) {
-        homeLog.error(`Home practice-srs action failed: ${err}`);
+        homeLog.error(`Home SRS start failed: ${err}`);
       }
     });
   });
+
+  // ── SRS: Show Answer ────────────────────────────────────
+  app.action('home_srs_show', async ({ ack, body, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      const user = getOrCreateUser(slackUserId);
+      const state = getHomeSession(user.id);
+
+      if (state?.srsReview) {
+        state.srsReview.showingAnswer = true;
+        setHomeSession(state);
+        await publishHomeTab(client, slackUserId);
+      }
+    });
+  });
+
+  // ── SRS: Grade (Again/Hard/Good/Easy) ───────────────────
+  const srsGradeHandler = (quality: number) => async ({ ack, body, client }: any) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      const user = getOrCreateUser(slackUserId);
+      const state = getHomeSession(user.id);
+
+      if (!state?.srsReview) return;
+
+      const review = state.srsReview;
+      const cardId = review.cardIds[review.currentIndex];
+
+      // Score the card via SM-2
+      const { getCardById, updateCardAfterReview, logReview } = require('../services/srsRepository');
+      const { sm2, qualityFromLabel } = require('../services/srs');
+
+      const card = getCardById(cardId);
+      if (card) {
+        const result = sm2(card.easeFactor, card.intervalDays, card.repetitions, quality);
+        updateCardAfterReview(cardId, result.easeFactor, result.interval, result.repetitions);
+        logReview(user.id, cardId, quality, 'button');
+      }
+
+      // Record result and advance
+      review.results.push({ cardId, quality });
+      review.currentIndex++;
+      review.showingAnswer = false;
+
+      // Check if done
+      if (review.currentIndex >= review.cardIds.length) {
+        state.view = 'srs_summary';
+      }
+
+      setHomeSession(state);
+      await publishHomeTab(client, slackUserId);
+    });
+  };
+
+  // ── SRS: Quit early ──────────────────────────────────────
+  app.action('home_srs_quit', async ({ ack, body, client }: any) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      const user = getOrCreateUser(slackUserId);
+      const state = getHomeSession(user.id);
+
+      if (state?.srsReview) {
+        // Show summary of what was reviewed so far
+        state.view = 'srs_summary';
+        setHomeSession(state);
+        await publishHomeTab(client, slackUserId);
+      }
+    });
+  });
+
+  app.action('home_srs_again', srsGradeHandler(1));
+  app.action('home_srs_hard', srsGradeHandler(2));
+  app.action('home_srs_good', srsGradeHandler(4));
+  app.action('home_srs_easy', srsGradeHandler(5));
 
   homeLog.info('Home tab handler registered');
 }

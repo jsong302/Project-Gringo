@@ -3,7 +3,7 @@ import { log } from '../utils/logger';
 import { toGringoError } from '../errors/gringoError';
 import { formatUserFacingError } from '../errors/formatUserFacingError';
 import { runWithObservabilityContext, getTraceId } from '../observability/context';
-import { respondEphemeral, buildHelpBlocks, postMessage } from '../utils/slackHelpers';
+import { respondEphemeral, buildHelpBlocks } from '../utils/slackHelpers';
 import { handleRepaso, ensureUser, registerReviewActions } from './reviewHandler';
 import { registerMessageHandlers } from './messageHandler';
 import { handleAdmin } from './adminHandler';
@@ -30,12 +30,7 @@ import {
   generateUnitExercise,
   markUnitPracticing,
   activateNextUnit,
-  formatLessonBlocks,
-  formatExerciseBlocks,
-  trackUnitMessage,
-  clearTrackedMessages,
 } from '../services/curriculumDelivery';
-import { getCurriculumCount } from '../services/curriculum';
 
 const cmdLog = log.withScope('commands');
 
@@ -262,61 +257,44 @@ export function registerCommands(app: App): void {
           }
 
           case 'next': {
-            const user = getOrCreateUser(command.user_id);
+            await respondEphemeral(respond, 'Your lesson is delivered on the *Home tab*! Click the Gringo app in your sidebar to see it.\n\n_Generating now — it may take a moment._');
 
-            // Open a DM channel for lesson delivery
-            const dm = await client.conversations.open({ users: command.user_id });
-            const dmChannel = dm.channel?.id;
-            if (!dmChannel) {
-              await respondEphemeral(respond, 'Could not open a DM with you. Make sure DMs are enabled.');
-              break;
-            }
+            // Trigger the Home tab lesson delivery in the background
+            const { createDefaultSession, setHomeSession, publishHomeTab } = await import('../services/homeSession');
+            const nextUser = getOrCreateUser(command.user_id);
+            let nextCurrent = getCurrentUnit(nextUser.id);
 
-            let current = getCurrentUnit(user.id);
-
-            // If current unit is passed or no active unit, try to activate next
-            if (!current || current.progress.status === 'passed') {
-              const nextUnit = activateNextUnit(user.id);
+            if (!nextCurrent || nextCurrent.progress.status === 'passed') {
+              const nextUnit = activateNextUnit(nextUser.id);
               if (!nextUnit) {
                 await respondEphemeral(respond, "You've completed all available curriculum units! Check back later for new content.");
                 break;
               }
-              current = getCurrentUnit(user.id);
+              nextCurrent = getCurrentUnit(nextUser.id);
             }
 
-            if (!current) {
+            if (!nextCurrent) {
               await respondEphemeral(respond, 'No curriculum units available. Ask an admin to check the curriculum.');
               break;
             }
 
-            await respondEphemeral(respond, 'Delivering your next lesson via DM...');
+            // Set loading state
+            const loadingState = createDefaultSession(nextUser.id, command.user_id);
+            loadingState.view = 'lesson';
+            loadingState.unit = nextCurrent.unit;
+            loadingState.lessonText = '_Generating your lesson..._';
+            setHomeSession(loadingState);
+            publishHomeTab(client, command.user_id).catch(() => {});
 
-            // Clear any previously tracked messages for this user (stale from prior unit)
-            const oldMsgs = clearTrackedMessages(user.id);
-            for (const msgTs of oldMsgs) {
-              try {
-                await client.chat.delete({ channel: dmChannel, ts: msgTs });
-              } catch {
-                // ignore — message may already be deleted
-              }
-            }
+            // Generate content
+            const lessonText = await generateUnitLesson(nextCurrent.unit, nextUser.id);
+            const exerciseText = await generateUnitExercise(nextCurrent.unit, nextUser.id);
+            markUnitPracticing(nextUser.id, nextCurrent.unit.id);
 
-            const totalUnits = getCurriculumCount();
-
-            // Generate and send lesson
-            const lessonText = await generateUnitLesson(current.unit, user.id);
-            const lessonBlocks = formatLessonBlocks(current.unit, lessonText, totalUnits);
-            const lessonTs = await postMessage(client, dmChannel, `Unit ${current.unit.unitOrder}: ${current.unit.title}`, lessonBlocks as any[]);
-            trackUnitMessage(user.id, lessonTs);
-
-            // Generate and send exercise
-            const exerciseText = await generateUnitExercise(current.unit, user.id);
-            const exerciseBlocks = formatExerciseBlocks(exerciseText);
-            const exerciseTs = await postMessage(client, dmChannel, 'Exercise', exerciseBlocks as any[]);
-            trackUnitMessage(user.id, exerciseTs);
-
-            // Mark unit as practicing
-            markUnitPracticing(user.id, current.unit.id);
+            loadingState.lessonText = lessonText;
+            loadingState.exerciseText = exerciseText;
+            setHomeSession(loadingState);
+            await publishHomeTab(client, command.user_id);
 
             break;
           }

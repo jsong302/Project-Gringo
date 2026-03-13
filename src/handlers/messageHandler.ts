@@ -39,6 +39,7 @@ import {
   trackUnitMessage,
   clearTrackedMessages,
 } from '../services/curriculumDelivery';
+import { getHomeSession, setHomeSession, createDefaultSession, publishHomeTab } from '../services/homeSession';
 
 const msgLog = log.withScope('message-handler');
 
@@ -277,6 +278,14 @@ export function registerMessageHandlers(app: App): void {
               });
               // Don't track the summary — it stays permanently
               updateStreak(user.id);
+
+              // Refresh Home tab to show pass state
+              const passState = createDefaultSession(user.id, slackUserId);
+              passState.view = 'grade';
+              passState.unit = current.unit;
+              passState.lastGradeResult = grade;
+              setHomeSession(passState);
+              publishHomeTab(client, slackUserId).catch(() => {});
               return;
 
             } else {
@@ -314,6 +323,14 @@ export function registerMessageHandlers(app: App): void {
                 trackUnitMessage(user.id, (hintResult as any)?.ts);
               }
               updateStreak(user.id);
+
+              // Refresh Home tab to show fail state
+              const failState = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+              failState.view = 'grade';
+              failState.unit = current.unit;
+              failState.lastGradeResult = grade;
+              setHomeSession(failState);
+              publishHomeTab(client, slackUserId).catch(() => {});
               return;
             }
             // If !grade.isAttempt, we fall through to charla below

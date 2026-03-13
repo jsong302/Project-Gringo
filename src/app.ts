@@ -14,6 +14,7 @@ import { initStt } from './services/stt';
 import { generateDailyLesson, generateLunfardoPost, logLesson, createCardsFromLesson, createCardsFromLunfardo } from './services/lessonEngine';
 import { getAllUsers } from './services/userService';
 import { recoverSessions } from './services/reviewSession';
+import { recoverHomeSessions } from './services/homeSession';
 import { sendSrsReminders, sendLessonNotifications, sendOnboardingFollowUp } from './services/notifications';
 import { closeStaleConversations } from './services/conversationTracker';
 import { log } from './utils/logger';
@@ -56,6 +57,9 @@ const bootLog = log.withScope('boot');
 
   // 4c. Recover active review sessions from DB
   recoverSessions();
+
+  // 4d. Recover home tab sessions from DB
+  recoverHomeSessions();
 
   // 5. Bootstrap admins from env
   if (config.app.adminUserIds.length > 0) {
