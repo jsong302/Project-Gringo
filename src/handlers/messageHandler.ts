@@ -214,14 +214,27 @@ export function registerMessageHandlers(app: App): void {
 
         // ── Curriculum exercise grading ──────────────────────
         // If user has a unit in "practicing" status in DM, grade their response
-        if (channelType === 'im' && text) {
+        if (channelType === 'im' && (text || audioFile)) {
           const current = getCurrentUnit(user.id);
           if (current && current.progress.status === 'practicing') {
+            // Transcribe voice memo if needed
+            let responseText = text;
+            if (audioFile && !text) {
+              const { transcribeAudio } = await import('../services/stt');
+              const audioUrl = audioFile.url_private ?? '';
+              const botToken = process.env.SLACK_BOT_TOKEN ?? '';
+              const transcript = await transcribeAudio(audioUrl, botToken);
+              responseText = transcript.transcript;
+              msgLog.info(`Transcribed voice memo for exercise: "${responseText.slice(0, 80)}"`);
+            }
+
+            if (!responseText) return;
+
             msgLog.info(`Grading curriculum exercise for ${slackUserId} (unit ${current.unit.unitOrder})`);
 
             // Get the exercise text from the unit
             const exerciseText = current.unit.exercisePrompt ?? current.unit.title;
-            const grade = await gradeExerciseResponse(current.unit, exerciseText, text, user.id);
+            const grade = await gradeExerciseResponse(current.unit, exerciseText, responseText, user.id);
 
             if (grade.passed) {
               const { leveledUp, newLevel } = markUnitPassed(user.id, current.unit.id, grade.score);
