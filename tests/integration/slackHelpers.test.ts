@@ -29,13 +29,9 @@ describe('buildHelpBlocks', () => {
     expect(allText).toContain('/gringo help');
     expect(allText).toContain('/gringo level');
     expect(allText).toContain('/gringo stats');
-    expect(allText).toContain('/conjugar');
-    expect(allText).toContain('/vocab');
-    expect(allText).toContain('/repaso');
-    expect(allText).toContain('/charlar');
-    expect(allText).toContain('/shadow');
-    expect(allText).toContain('/desafio');
-    expect(allText).toContain('/feedback');
+    expect(allText).toContain('/gringo repaso');
+    expect(allText).toContain('/gringo onboard');
+    expect(allText).toContain('/gringo admin');
   });
 
   it('should not include admin commands in help output', () => {

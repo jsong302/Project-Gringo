@@ -33,7 +33,7 @@ export function registerCommands(app: App): void {
           case 'help':
           case '': {
             const blocks = buildHelpBlocks();
-            await respondEphemeral(respond, 'Gringo Help — usá /gringo help para ver la guía completa.', blocks);
+            await respondEphemeral(respond, 'Gringo Help', blocks);
             break;
           }
 
@@ -50,15 +50,15 @@ export function registerCommands(app: App): void {
             if (args.length > 0) {
               const newLevel = parseInt(args[0], 10);
               if (isNaN(newLevel) || newLevel < 1 || newLevel > 5) {
-                await respondEphemeral(respond, 'El nivel tiene que ser entre 1 y 5. Ejemplo: `/gringo level 3`');
+                await respondEphemeral(respond, 'Level must be between 1 and 5. Example: `/gringo level 3`');
                 break;
               }
               updateLevel(user.id, newLevel);
-              await respondEphemeral(respond, `✅ Tu nivel se actualizó a *${newLevel}*. Las lecciones y repasos se van a adaptar.`);
+              await respondEphemeral(respond, `Level updated to *${newLevel}*. Lessons and reviews will adapt.`);
             } else {
               const threshold = XP_THRESHOLDS[user.level] ?? Infinity;
-              const progress = threshold === Infinity ? 'máximo' : `${user.xp}/${threshold} XP`;
-              await respondEphemeral(respond, `📊 Tu nivel actual: *${user.level}/5* (${progress})\nUsá \`/gringo level <1-5>\` para cambiarlo.`);
+              const progress = threshold === Infinity ? 'max' : `${user.xp}/${threshold} XP`;
+              await respondEphemeral(respond, `Your level: *${user.level}/5* (${progress})\nUse \`/gringo level <1-5>\` to change it.`);
             }
             break;
           }
@@ -70,34 +70,34 @@ export function registerCommands(app: App): void {
 
             const errorLine = errorSummary.length > 0
               ? errorSummary.map((e) => `${e.category}: ${e.count}`).join(', ')
-              : 'ninguno todavía';
+              : 'none yet';
 
             const blocks = [
               {
                 type: 'header',
-                text: { type: 'plain_text', text: '📊 Tus estadísticas' },
+                text: { type: 'plain_text', text: 'Your Stats' },
               },
               {
                 type: 'section',
                 text: {
                   type: 'mrkdwn',
                   text: [
-                    `*Nivel:* ${user.level}/5`,
+                    `*Level:* ${user.level}/5`,
                     `*XP:* ${user.xp}`,
-                    `*Racha:* ${user.streakDays} día${user.streakDays !== 1 ? 's' : ''}`,
+                    `*Streak:* ${user.streakDays} day${user.streakDays !== 1 ? 's' : ''}`,
                     '',
-                    `*Cartas SRS:* ${cardStats.total} total`,
-                    `• Pendientes hoy: ${cardStats.due}`,
-                    `• Aprendiendo: ${cardStats.learning}`,
-                    `• En repaso: ${cardStats.reviewing}`,
+                    `*SRS Cards:* ${cardStats.total} total`,
+                    `• Due today: ${cardStats.due}`,
+                    `• Learning: ${cardStats.learning}`,
+                    `• Reviewing: ${cardStats.reviewing}`,
                     '',
-                    `*Errores comunes:* ${errorLine}`,
+                    `*Common errors:* ${errorLine}`,
                   ].join('\n'),
                 },
               },
             ];
 
-            await respondEphemeral(respond, 'Tus estadísticas', blocks as any);
+            await respondEphemeral(respond, 'Your Stats', blocks as any);
             break;
           }
 
@@ -115,7 +115,7 @@ export function registerCommands(app: App): void {
           default:
             await respondEphemeral(
               respond,
-              `Ese comando no existe todavía. Probá \`/gringo help\` para ver lo que hay.`,
+              `Unknown command. Try \`/gringo help\` to see available commands.`,
             );
             break;
         }

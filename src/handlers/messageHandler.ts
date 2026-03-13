@@ -87,7 +87,7 @@ export function registerMessageHandlers(app: App): void {
       } catch (err) {
         msgLog.error(`Message handler failed: ${err}`);
         await say({
-          text: 'Uh, se me trabó algo. Intentá de nuevo en un ratito.',
+          text: 'Something went wrong. Please try again in a moment.',
           thread_ts: threadTs,
         });
       }

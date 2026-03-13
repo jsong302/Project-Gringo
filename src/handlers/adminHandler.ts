@@ -75,7 +75,7 @@ export async function handleAdmin(
 ): Promise<void> {
   // Auth check
   if (!isAdmin(slackUserId)) {
-    await respondEphemeral(respond, 'No tenés permisos de admin. Pedile a un admin que te agregue.');
+    await respondEphemeral(respond, 'You don\'t have admin permissions. Ask an admin to add you.');
     return;
   }
 
@@ -84,26 +84,26 @@ export async function handleAdmin(
   // Special commands
   if (trimmed === '' || trimmed === 'help') {
     await respondEphemeral(respond, [
-      '*Admin Agent — Chat con el bot para administrarlo y practicar español*',
+      '*Admin Agent — Chat with the bot to manage it and practice Spanish*',
       '',
-      'Podés hablar en español (charla) o en inglés (admin), o mezclar los dos.',
+      'You can speak in Spanish (charla) or English (admin), or mix both.',
       '',
-      'Ejemplos:',
+      'Examples:',
       '• `/gringo admin show me all users and their progress`',
       '• `/gringo admin change the daily lesson time to 10am`',
       '• `/gringo admin che, cómo andan los pibes?`',
       '• `/gringo admin add @maria as admin`',
       '',
-      'También podés mandarme un DM directo para chatear sin el slash command.',
+      'You can also DM the bot directly to chat without the slash command.',
       '',
-      '`/gringo admin clear` — Borrar historial de conversación',
+      '`/gringo admin clear` — Clear conversation history',
     ].join('\n'));
     return;
   }
 
   if (trimmed === 'clear') {
     clearAdminHistory(slackUserId);
-    await respondEphemeral(respond, 'Historial de admin borrado.');
+    await respondEphemeral(respond, 'Admin history cleared.');
     return;
   }
 
@@ -132,7 +132,7 @@ export async function handleAdmin(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     adminLog.error(`Admin agent failed: ${msg}`);
-    await respondEphemeral(respond, `Error del admin agent: ${msg}`);
+    await respondEphemeral(respond, `Admin agent error: ${msg}`);
   }
 }
 
@@ -162,7 +162,7 @@ export async function handleAdminDm(
   // Handle "clear" in DM too
   if (message.trim().toLowerCase() === 'clear') {
     clearAdminHistory(slackUserId);
-    await postMessage(client, channelId, 'Historial borrado. Empezamos de nuevo.', undefined, threadTs);
+    await postMessage(client, channelId, 'History cleared. Starting fresh.', undefined, threadTs);
     return;
   }
 

@@ -32,7 +32,7 @@ describe('Admin Handler', () => {
   describe('auth check', () => {
     it('should reject non-admin users', async () => {
       await handleAdmin('U_NOBODY', 'show users', mockRespond);
-      expect(responses[0].text).toContain('No tenés permisos');
+      expect(responses[0].text).toContain('don\'t have admin permissions');
     });
   });
 
@@ -55,7 +55,7 @@ describe('Admin Handler', () => {
       setSetting('admin.user_ids', ['U_BOSS']);
       _clearCache();
       await handleAdmin('U_BOSS', 'clear', mockRespond);
-      expect(responses[0].text).toContain('borrado');
+      expect(responses[0].text).toContain('cleared');
     });
   });
 

@@ -34,7 +34,7 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
       type: 'header',
       text: {
         type: 'plain_text',
-        text: 'Bienvenido a Gringo — Tu profe de argentino',
+        text: 'Welcome to Gringo — Your Argentine Spanish Tutor',
         emoji: true,
       },
     },
@@ -42,7 +42,7 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: 'Gringo te enseña español rioplatense — con voseo, lunfardo, y onda porteña. Acá tenés todo lo que necesitás saber:',
+        text: 'Gringo teaches you Rioplatense Spanish — with voseo, lunfardo, and real Argentine flavor. Here\'s everything you need to know:',
       },
     },
     { type: 'divider' },
@@ -50,7 +50,7 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: '*Canales*',
+        text: '*Channels*',
       },
     },
     {
@@ -58,11 +58,11 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
       text: {
         type: 'mrkdwn',
         text: [
-          '`#daily-lesson` — Lección diaria: vocabulario, gramática, cultura, y ejercicio de voz',
-          '`#charla-libre` — Conversación abierta con el bot en español argentino',
-          '`#lunfardo-del-dia` — Palabra de lunfardo nueva cada día con etimología',
-          '`#repaso` — Sesiones de repaso espaciado (SRS)',
-          '`#desafios` — Práctica en parejas con escenarios',
+          '`#daily-lesson` — Daily lesson: vocab, grammar, culture, and a voice exercise (Mon-Fri)',
+          '`#charla-libre` — Free conversation with the bot in Argentine Spanish',
+          '`#lunfardo-del-dia` — A new lunfardo (slang) word every day with etymology',
+          '`#repaso` — Spaced repetition review sessions (SRS flashcards)',
+          '`#desafios` — Pair practice with dialogue scenarios',
         ].join('\n'),
       },
     },
@@ -71,7 +71,7 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: '*Comandos*',
+        text: '*Commands*',
       },
     },
     {
@@ -79,17 +79,12 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
       text: {
         type: 'mrkdwn',
         text: [
-          '`/gringo help` — Esta guía',
-          '`/gringo level` — Ver o cambiar tu nivel (1-5)',
-          '`/gringo stats` — Tu racha, palabras aprendidas, y progreso',
-          '`/gringo notifications` — Configurar recordatorios y horarios',
-          '`/conjugar <verbo>` — Tabla de conjugación voseante',
-          '`/vocab <palabra>` — Buscar una palabra con contexto',
-          '`/repaso` — Empezar sesión de repaso',
-          '`/charlar <escenario>` — Simulación de diálogo',
-          '`/shadow` — Ejercicio de imitación',
-          '`/desafio` — Desafío en pareja',
-          '`/feedback <mensaje>` — Decile al bot qué onda',
+          '`/gringo help` — This guide',
+          '`/gringo level` — View or change your level (1-5)',
+          '`/gringo stats` — Your streak, words learned, and progress',
+          '`/gringo repaso` — Start a review session',
+          '`/gringo onboard` — Re-send the welcome DM',
+          '`/gringo admin <message>` — Admin agent (admins only)',
         ].join('\n'),
       },
     },
@@ -99,7 +94,7 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
       elements: [
         {
           type: 'mrkdwn',
-          text: 'Tu nivel actual: usá `/gringo level` para verlo. Dale que va!',
+          text: 'Check your level with `/gringo level`. Let\'s go!',
         },
       ],
     },

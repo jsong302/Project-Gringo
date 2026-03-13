@@ -13,7 +13,7 @@ describe('Onboarding Block Builders', () => {
     it('should include header and description', () => {
       const blocks = buildWelcomeBlocks();
       const text = JSON.stringify(blocks);
-      expect(text).toContain('Bienvenido a Gringo');
+      expect(text).toContain('Welcome to Gringo');
       expect(text).toContain('porteño');
       expect(text).toContain('voseo');
     });
@@ -40,8 +40,8 @@ describe('Onboarding Block Builders', () => {
     it('should include level descriptions in context', () => {
       const blocks = buildLevelPickerBlocks();
       const text = JSON.stringify(blocks);
-      expect(text).toContain('nunca estudié');
-      expect(text).toContain('casi nativo');
+      expect(text).toContain('never studied');
+      expect(text).toContain('near native');
     });
   });
 
@@ -49,8 +49,8 @@ describe('Onboarding Block Builders', () => {
     it('should show selected level', () => {
       const blocks = buildLevelConfirmationBlocks(3);
       const text = JSON.stringify(blocks);
-      expect(text).toContain('Nivel 3');
-      expect(text).toContain('Intermedio');
+      expect(text).toContain('Level 3');
+      expect(text).toContain('Intermediate');
     });
 
     it('should mention /gringo level command', () => {
@@ -65,9 +65,9 @@ describe('Onboarding Block Builders', () => {
       const blocks = buildVoiceTutorialBlocks();
       const text = JSON.stringify(blocks);
       expect(text).toContain('desktop');
-      expect(text).toContain('celular');
+      expect(text).toContain('mobile');
       expect(text).toContain('Record audio clip');
-      expect(text).toContain('micrófono');
+      expect(text).toContain('microphone');
     });
   });
 
@@ -87,13 +87,13 @@ describe('Onboarding Block Builders', () => {
     it('should adapt exercise to level 1', () => {
       const blocks = buildFirstExerciseBlocks(1);
       const text = JSON.stringify(blocks);
-      expect(text).toContain('Presentate');
+      expect(text).toContain('Introduce yourself');
     });
 
     it('should adapt exercise to level 3', () => {
       const blocks = buildFirstExerciseBlocks(3);
       const text = JSON.stringify(blocks);
-      expect(text).toContain('viaje');
+      expect(text).toContain('trip');
     });
 
     it('should adapt exercise to level 5', () => {

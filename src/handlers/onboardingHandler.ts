@@ -46,11 +46,11 @@ async function sendWelcomeDm(client: any, slackUserId: string): Promise<void> {
 
   // Step 1: Welcome
   const welcomeBlocks = buildWelcomeBlocks();
-  await postMessage(client, channelId, 'Bienvenido a Gringo!', welcomeBlocks);
+  await postMessage(client, channelId, 'Welcome to Gringo!', welcomeBlocks);
 
   // Step 2: Level picker
   const levelBlocks = buildLevelPickerBlocks();
-  await postMessage(client, channelId, 'Elegí tu nivel', levelBlocks);
+  await postMessage(client, channelId, 'Pick your level', levelBlocks);
 
   onboardLog.info(`Welcome DM sent to ${slackUserId}`);
 }
@@ -61,17 +61,17 @@ async function sendWelcomeDm(client: any, slackUserId: string): Promise<void> {
 async function sendPostLevelDm(client: any, channelId: string, level: number): Promise<void> {
   // Step 3: Level confirmation + voice tutorial
   const confirmBlocks = buildLevelConfirmationBlocks(level);
-  await postMessage(client, channelId, `Nivel ${level} configurado`, confirmBlocks);
+  await postMessage(client, channelId, `Level ${level} set`, confirmBlocks);
 
   const voiceBlocks = buildVoiceTutorialBlocks();
-  await postMessage(client, channelId, 'Tutorial de audio', voiceBlocks);
+  await postMessage(client, channelId, 'Voice memo tutorial', voiceBlocks);
 
   // Step 4: Channel guide + first exercise
   const guideBlocks = buildChannelGuideBlocks();
-  await postMessage(client, channelId, 'Guía de canales', guideBlocks);
+  await postMessage(client, channelId, 'Channel guide', guideBlocks);
 
   const exerciseBlocks = buildFirstExerciseBlocks(level);
-  await postMessage(client, channelId, 'Tu primer ejercicio', exerciseBlocks);
+  await postMessage(client, channelId, 'Your first exercise', exerciseBlocks);
 }
 
 // ── Registration ───────────────────────────────────────────
@@ -134,13 +134,13 @@ export async function handleOnboardCommand(
     await sendWelcomeDm(client, slackUserId);
     await respond({
       response_type: 'ephemeral',
-      text: 'Te mandé un DM con la guía de bienvenida. Revisá tus mensajes directos!',
+      text: 'Sent you a welcome DM. Check your direct messages!',
     });
   } catch (err) {
     onboardLog.error(`Manual onboard failed for ${slackUserId}: ${err}`);
     await respond({
       response_type: 'ephemeral',
-      text: 'No pude mandarte el DM. Asegurate de tener los DMs habilitados.',
+      text: 'Could not send you a DM. Make sure DMs are enabled.',
     });
   }
 }

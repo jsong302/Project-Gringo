@@ -79,31 +79,31 @@ describe('formatUserFacingError', () => {
     expect(formatUserFacingError(err)).toBe('Custom user message');
   });
 
-  it('should return Spanish message for ERR_LLM_TIMEOUT', () => {
+  it('should return message for ERR_LLM_TIMEOUT', () => {
     const err = new GringoError({ message: 'timeout', code: 'ERR_LLM_TIMEOUT' });
     const msg = formatUserFacingError(err);
-    expect(msg).toContain('mate');
+    expect(msg).toContain('too long');
   });
 
-  it('should return Spanish message for ERR_STT_FAILED', () => {
+  it('should return message for ERR_STT_FAILED', () => {
     const err = new GringoError({ message: 'stt fail', code: 'ERR_STT_FAILED' });
     const msg = formatUserFacingError(err);
     expect(msg).toContain('audio');
   });
 
-  it('should return Spanish message for ERR_PERMISSION_DENIED', () => {
+  it('should return message for ERR_PERMISSION_DENIED', () => {
     const err = new GringoError({ message: 'denied', code: 'ERR_PERMISSION_DENIED' });
     const msg = formatUserFacingError(err);
-    expect(msg).toContain('admins');
+    expect(msg).toContain('admin-only');
   });
 
   it('should return default message for non-GringoError', () => {
     const msg = formatUserFacingError(new Error('random'));
-    expect(msg).toContain('algo salió mal');
+    expect(msg).toContain('Something went wrong');
   });
 
   it('should return default message for unknown throw values', () => {
     const msg = formatUserFacingError('just a string');
-    expect(msg).toContain('algo salió mal');
+    expect(msg).toContain('Something went wrong');
   });
 });

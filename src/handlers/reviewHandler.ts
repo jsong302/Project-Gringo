@@ -93,7 +93,7 @@ export async function handleRepaso(
   if (existing) {
     await respond({
       response_type: 'ephemeral',
-      text: 'Ya tenés una sesión de repaso activa. Terminala primero!',
+      text: 'You already have an active review session. Finish it first!',
     });
     return;
   }
@@ -107,7 +107,7 @@ export async function handleRepaso(
     const stats = getUserCardStats(userId);
     await respond({
       response_type: 'ephemeral',
-      text: `No tenés cartas pendientes para repasar! 🎉\nTotal de cartas: ${stats.total} | En aprendizaje: ${stats.learning} | En repaso: ${stats.reviewing}`,
+      text: `No cards due for review! 🎉\nTotal cards: ${stats.total} | Learning: ${stats.learning} | Reviewing: ${stats.reviewing}`,
     });
     return;
   }
@@ -115,7 +115,7 @@ export async function handleRepaso(
   // Present first card
   const presented = getCurrentCard(session);
   if (!presented) {
-    await respond({ response_type: 'ephemeral', text: 'Error interno — no se pudo cargar la carta.' });
+    await respond({ response_type: 'ephemeral', text: 'Internal error — could not load the card.' });
     return;
   }
 
@@ -126,7 +126,7 @@ export async function handleRepaso(
       elements: [
         {
           type: 'button',
-          text: { type: 'plain_text', text: '👁 Mostrar respuesta' },
+          text: { type: 'plain_text', text: 'Show Answer' },
           action_id: 'srs_show_answer',
           value: String(presented.card.id),
           style: 'primary',
@@ -137,7 +137,7 @@ export async function handleRepaso(
 
   await respond({
     response_type: 'ephemeral',
-    text: `Repaso: Carta ${presented.cardNumber}/${presented.totalCards}`,
+    text: `Review: Card ${presented.cardNumber}/${presented.totalCards}`,
     blocks,
   });
 }
@@ -157,25 +157,25 @@ export function registerReviewActions(app: App): void {
         const session = getActiveSession(userId, channelId);
 
         if (!session) {
-          await respond({ response_type: 'ephemeral', text: 'No tenés una sesión activa. Usá `/gringo repaso` para empezar.' });
+          await respond({ response_type: 'ephemeral', text: 'No active session. Use `/gringo repaso` to start one.' });
           return;
         }
 
         const presented = getCurrentCard(session);
         if (!presented) {
-          await respond({ response_type: 'ephemeral', text: 'No hay más cartas.' });
+          await respond({ response_type: 'ephemeral', text: 'No more cards.' });
           return;
         }
 
         const blocks = formatAnswerBlocks(presented.content);
         await respond({
           response_type: 'ephemeral',
-          text: `Respuesta: ${presented.content.back}`,
+          text: `Answer: ${presented.content.back}`,
           blocks: blocks as any,
         });
       } catch (err) {
         reviewLog.error(`Show answer failed: ${err}`);
-        await respond({ response_type: 'ephemeral', text: 'Error mostrando la respuesta.' });
+        await respond({ response_type: 'ephemeral', text: 'Error showing the answer.' });
       }
     });
   });
@@ -193,7 +193,7 @@ export function registerReviewActions(app: App): void {
           const session = getActiveSession(userId, channelId);
 
           if (!session) {
-            await respond({ response_type: 'ephemeral', text: 'No tenés una sesión activa.' });
+            await respond({ response_type: 'ephemeral', text: 'No active session.' });
             return;
           }
 
@@ -209,7 +209,7 @@ export function registerReviewActions(app: App): void {
               const blocks = formatSummaryBlocks(summary);
               await respond({
                 response_type: 'ephemeral',
-                text: 'Repaso completado!',
+                text: 'Review complete!',
                 blocks: blocks as any,
               });
             }
@@ -224,7 +224,7 @@ export function registerReviewActions(app: App): void {
               elements: [
                 {
                   type: 'button',
-                  text: { type: 'plain_text', text: '👁 Mostrar respuesta' },
+                  text: { type: 'plain_text', text: 'Show Answer' },
                   action_id: 'srs_show_answer',
                   value: String(next.card.id),
                   style: 'primary',
@@ -235,12 +235,12 @@ export function registerReviewActions(app: App): void {
 
           await respond({
             response_type: 'ephemeral',
-            text: `Repaso: Carta ${next.cardNumber}/${next.totalCards}`,
+            text: `Review: Card ${next.cardNumber}/${next.totalCards}`,
             blocks: blocks as any,
           });
         } catch (err) {
           reviewLog.error(`Score (${label}) failed: ${err}`);
-          await respond({ response_type: 'ephemeral', text: 'Error procesando tu respuesta.' });
+          await respond({ response_type: 'ephemeral', text: 'Error processing your response.' });
         }
       });
     });

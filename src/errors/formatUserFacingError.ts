@@ -1,21 +1,21 @@
 import { GringoError, type GringoErrorCode } from './gringoError';
 
 const USER_MESSAGES: Record<GringoErrorCode, string> = {
-  ERR_UNKNOWN: 'Uy, algo salió mal. Intentá de nuevo, che.',
-  ERR_CONFIG_MISSING: 'El bot está mal configurado. Avisale al admin.',
-  ERR_DB_INIT: 'No pude arrancar la memoria. Avisale al admin.',
-  ERR_DB_QUERY: 'Se me trabó la memoria. Intentá en un ratito.',
-  ERR_SLACK_API: 'Slack no me deja hacer eso ahora. Probá de nuevo.',
-  ERR_LLM_TIMEOUT: 'El cerebro del bot se tomó un mate y no volvió. Probá de nuevo.',
-  ERR_LLM_RATE_LIMIT: 'Estoy pensando demasiado. Dame un minutito y probá de nuevo.',
-  ERR_LLM_RESPONSE: 'Me confundí pensando. Probá de nuevo, dale.',
-  ERR_STT_FAILED: 'No pude entender el audio. Grabalo de vuelta, dale.',
-  ERR_TTS_FAILED: 'No pude generar el audio. Intentá de nuevo.',
-  ERR_VOICE_DOWNLOAD: 'No pude bajar tu audio de Slack. Probá mandarlo de nuevo.',
-  ERR_USER_NOT_FOUND: 'No te tengo registrado. Probá con `/gringo help` para empezar.',
-  ERR_PERMISSION_DENIED: 'Eh, eso es solo para admins.',
-  ERR_INVALID_INPUT: 'No entendí lo que me mandaste. Fijate y probá de nuevo.',
-  ERR_SESSION_CONFLICT: 'Ya tenés una sesión activa. Terminala primero.',
+  ERR_UNKNOWN: 'Something went wrong. Please try again.',
+  ERR_CONFIG_MISSING: 'The bot is misconfigured. Let an admin know.',
+  ERR_DB_INIT: 'Could not initialize the database. Let an admin know.',
+  ERR_DB_QUERY: 'Database error. Please try again in a moment.',
+  ERR_SLACK_API: 'Slack API error. Please try again.',
+  ERR_LLM_TIMEOUT: 'The AI took too long to respond. Please try again.',
+  ERR_LLM_RATE_LIMIT: 'Too many requests. Wait a moment and try again.',
+  ERR_LLM_RESPONSE: 'Got an unexpected response from the AI. Please try again.',
+  ERR_STT_FAILED: 'Could not transcribe your audio. Try recording again.',
+  ERR_TTS_FAILED: 'Could not generate audio. Please try again.',
+  ERR_VOICE_DOWNLOAD: 'Could not download your audio from Slack. Try sending it again.',
+  ERR_USER_NOT_FOUND: 'You are not registered yet. Try `/gringo help` to get started.',
+  ERR_PERMISSION_DENIED: 'That action is admin-only.',
+  ERR_INVALID_INPUT: 'Invalid input. Please check and try again.',
+  ERR_SESSION_CONFLICT: 'You already have an active session. Finish it first.',
 };
 
 export function formatUserFacingError(err: unknown): string {

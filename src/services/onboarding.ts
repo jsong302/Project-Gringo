@@ -16,18 +16,18 @@ export function buildWelcomeBlocks(): Record<string, unknown>[] {
   return [
     {
       type: 'header',
-      text: { type: 'plain_text', text: 'Bienvenido a Gringo!', emoji: true },
+      text: { type: 'plain_text', text: 'Welcome to Gringo!', emoji: true },
     },
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
         text: [
-          'Soy *Gringo*, tu profe de español argentino. Te voy a enseñar a hablar como un porteño — con voseo, lunfardo, y toda la onda.',
+          "I'm *Gringo*, your Argentine Spanish tutor. I'll teach you to speak like a real porteño — with voseo, lunfardo, and authentic flavor.",
           '',
-          'Acá hay un grupo chico (6-15 personas) aprendiendo juntos. Vamos a charlar, practicar con audio, y repasar vocabulario todos los días.',
+          "There's a small group (6-15 people) learning together. We'll chat, practice with voice memos, and review vocabulary every day.",
           '',
-          'Primero, necesito saber tu nivel para adaptar las lecciones. Dale, elegí el que te parezca:',
+          "First, I need to know your level so I can adapt the lessons. Pick the one that fits:",
         ].join('\n'),
       },
     },
@@ -42,7 +42,7 @@ export function buildLevelPickerBlocks(): Record<string, unknown>[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: '*Cuál es tu nivel de español?*',
+        text: '*What is your Spanish level?*',
       },
     },
     {
@@ -50,31 +50,31 @@ export function buildLevelPickerBlocks(): Record<string, unknown>[] {
       elements: [
         {
           type: 'button',
-          text: { type: 'plain_text', text: '1 - Nada', emoji: true },
+          text: { type: 'plain_text', text: '1 - None', emoji: true },
           action_id: 'onboard_level_1',
           value: '1',
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: '2 - Poco', emoji: true },
+          text: { type: 'plain_text', text: '2 - A little', emoji: true },
           action_id: 'onboard_level_2',
           value: '2',
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: '3 - Intermedio', emoji: true },
+          text: { type: 'plain_text', text: '3 - Intermediate', emoji: true },
           action_id: 'onboard_level_3',
           value: '3',
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: '4 - Avanzado', emoji: true },
+          text: { type: 'plain_text', text: '4 - Advanced', emoji: true },
           action_id: 'onboard_level_4',
           value: '4',
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: '5 - Nativo/Fluido', emoji: true },
+          text: { type: 'plain_text', text: '5 - Native/Fluent', emoji: true },
           action_id: 'onboard_level_5',
           value: '5',
         },
@@ -85,7 +85,7 @@ export function buildLevelPickerBlocks(): Record<string, unknown>[] {
       elements: [
         {
           type: 'mrkdwn',
-          text: '_1 = nunca estudié español | 2 = sé algo básico | 3 = puedo mantener una conversación | 4 = bastante fluido | 5 = casi nativo_',
+          text: '_1 = never studied Spanish | 2 = know some basics | 3 = can hold a conversation | 4 = quite fluent | 5 = near native_',
         },
       ],
     },
@@ -95,11 +95,11 @@ export function buildLevelPickerBlocks(): Record<string, unknown>[] {
 // ── Step 3: Level Confirmation + Voice Tutorial ────────────
 
 const LEVEL_DESCRIPTIONS: Record<number, string> = {
-  1: 'Principiante absoluto — vamos a empezar desde cero, tranqui.',
-  2: 'Principiante — ya sabés algo, vamos a construir sobre eso.',
-  3: 'Intermedio — podés charlar, ahora vamos a pulir.',
-  4: 'Avanzado — hora de hablar como un verdadero porteño.',
-  5: 'Experto — vamos a perfeccionar con lunfardo y modismos.',
+  1: 'Absolute beginner — we\'ll start from scratch, no worries.',
+  2: 'Beginner — you know some basics, we\'ll build on that.',
+  3: 'Intermediate — you can chat, now let\'s polish your skills.',
+  4: 'Advanced — time to talk like a real porteño.',
+  5: 'Expert — we\'ll fine-tune with lunfardo and slang.',
 };
 
 export function buildLevelConfirmationBlocks(level: number): Record<string, unknown>[] {
@@ -109,7 +109,7 @@ export function buildLevelConfirmationBlocks(level: number): Record<string, unkn
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Nivel ${level}* — ${desc}\n\nPodés cambiar tu nivel cuando quieras con \`/gringo level <1-5>\`.`,
+        text: `*Level ${level}* — ${desc}\n\nYou can change your level anytime with \`/gringo level <1-5>\`.`,
       },
     },
   ];
@@ -119,26 +119,26 @@ export function buildVoiceTutorialBlocks(): Record<string, unknown>[] {
   return [
     {
       type: 'header',
-      text: { type: 'plain_text', text: 'Clave: los audios de voz', emoji: true },
+      text: { type: 'plain_text', text: 'Key Feature: Voice Memos', emoji: true },
     },
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
         text: [
-          'Practicar hablando es la parte más importante. Slack tiene audios integrados:',
+          'Practicing speaking is the most important part. Slack has built-in voice memos:',
           '',
-          '*En desktop:*',
-          '1. Hacé click en el icono *+* a la izquierda del campo de mensaje',
-          '2. Elegí *"Record audio clip"*',
-          '3. Grabá tu audio y mandalo',
+          '*On desktop:*',
+          '1. Click the *+* icon to the left of the message field',
+          '2. Select *"Record audio clip"*',
+          '3. Record and send your audio',
           '',
-          '*En celular:*',
-          '1. Tocá el ícono del *micrófono* en el campo de mensaje',
-          '2. Mantené presionado para grabar',
-          '3. Soltá para enviar',
+          '*On mobile:*',
+          '1. Tap the *microphone* icon in the message field',
+          '2. Hold to record',
+          '3. Release to send',
           '',
-          'Yo voy a escuchar tu audio, transcribirlo, y darte feedback sobre pronunciación y gramática.',
+          "I'll listen to your audio, transcribe it, and give you feedback on pronunciation and grammar.",
         ].join('\n'),
       },
     },
@@ -151,18 +151,18 @@ export function buildChannelGuideBlocks(): Record<string, unknown>[] {
   return [
     {
       type: 'header',
-      text: { type: 'plain_text', text: 'Los canales', emoji: true },
+      text: { type: 'plain_text', text: 'Channels', emoji: true },
     },
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
         text: [
-          '`#charla-libre` — Conversación libre conmigo en español. Mandá texto o audio y yo te respondo.',
-          '`#daily-lesson` — Lunes a viernes a las 9am, una lección nueva.',
-          '`#lunfardo-del-dia` — Todos los días al mediodía, una palabra de lunfardo.',
-          '`#repaso` — Tarjetas de repaso espaciado (SRS) para memorizar vocabulario.',
-          '`#desafios` — Práctica con otros estudiantes.',
+          '`#charla-libre` — Free conversation with me in Spanish. Send text or voice and I\'ll respond.',
+          '`#daily-lesson` — Monday to Friday at 9am, a new lesson.',
+          '`#lunfardo-del-dia` — Every day at noon, a new lunfardo (slang) word.',
+          '`#repaso` — Spaced repetition flashcards (SRS) to memorize vocabulary.',
+          '`#desafios` — Practice with other students.',
         ].join('\n'),
       },
     },
@@ -172,24 +172,24 @@ export function buildChannelGuideBlocks(): Record<string, unknown>[] {
 export function buildFirstExerciseBlocks(level: number): Record<string, unknown>[] {
   const exercises: Record<number, { prompt: string; hint: string }> = {
     1: {
-      prompt: 'Presentate: decí tu nombre y de dónde sos.',
-      hint: 'Ejemplo: "Hola, me llamo Juan y soy de Nueva York."',
+      prompt: 'Introduce yourself: say your name and where you\'re from.',
+      hint: 'Example: "Hola, me llamo Juan y soy de Nueva York."',
     },
     2: {
-      prompt: 'Contame qué te gusta hacer en tu tiempo libre.',
-      hint: 'Ejemplo: "Me gusta cocinar y escuchar música."',
+      prompt: 'Tell me what you like to do in your free time.',
+      hint: 'Example: "Me gusta cocinar y escuchar música."',
     },
     3: {
-      prompt: 'Contame sobre tu último viaje. Adónde fuiste y qué hiciste?',
-      hint: 'Intentá usar el pasado: "Fui a...", "Visité...", "Comí..."',
+      prompt: 'Tell me about your last trip. Where did you go and what did you do?',
+      hint: 'Try using past tense: "Fui a...", "Visité...", "Comí..."',
     },
     4: {
-      prompt: 'Qué opinás del mate? Lo probaste alguna vez? Contame.',
-      hint: 'Usá voseo: "Yo creo que...", "A mí me parece..."',
+      prompt: 'What do you think about mate? Have you ever tried it?',
+      hint: 'Use voseo: "Yo creo que...", "A mí me parece..."',
     },
     5: {
-      prompt: 'Che, contame alguna anécdota copada que te haya pasado viajando.',
-      hint: 'Dale con todo — lunfardo, modismos, lo que quieras.',
+      prompt: 'Tell me a cool story from one of your trips.',
+      hint: 'Go all out — lunfardo, slang, whatever you\'ve got.',
     },
   };
 
@@ -198,7 +198,7 @@ export function buildFirstExerciseBlocks(level: number): Record<string, unknown>
   return [
     {
       type: 'header',
-      text: { type: 'plain_text', text: 'Tu primer ejercicio', emoji: true },
+      text: { type: 'plain_text', text: 'Your First Exercise', emoji: true },
     },
     {
       type: 'section',
@@ -209,7 +209,7 @@ export function buildFirstExerciseBlocks(level: number): Record<string, unknown>
           '',
           `_${exercise.hint}_`,
           '',
-          'Podés responder por texto o con un audio en `#charla-libre`. Dale, animate!',
+          'Reply with text or a voice memo in `#charla-libre`. Give it a try!',
         ].join('\n'),
       },
     },
@@ -218,7 +218,7 @@ export function buildFirstExerciseBlocks(level: number): Record<string, unknown>
       elements: [
         {
           type: 'mrkdwn',
-          text: 'Cualquier duda, mandame `/gringo help` o escribime "no entiendo" y te explico en inglés.',
+          text: 'If you get stuck, use `/gringo help` or type "no entiendo" and I\'ll explain in English.',
         },
       ],
     },

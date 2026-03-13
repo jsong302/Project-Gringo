@@ -101,7 +101,7 @@ describe('Onboarding Handler', () => {
 
       // Should have sent error response
       expect(responses.length).toBe(1);
-      expect(responses[0].text).toContain('No pude');
+      expect(responses[0].text).toContain('Could not send you a DM');
     });
   });
 });
