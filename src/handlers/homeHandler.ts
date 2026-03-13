@@ -195,12 +195,27 @@ function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
 // ── View: Dashboard ─────────────────────────────────────────
 
 function buildDashboardView(slackUserId: string): Record<string, unknown>[] {
-  return [
+  const user = getOrCreateUser(slackUserId);
+  const state = getHomeSession(user.id);
+  const blocks = [
     ...buildProfileBlocks(slackUserId),
     ...buildProgressBlocks(slackUserId),
     ...buildStatsBlocks(slackUserId),
-    ...buildDashboardActions(slackUserId),
   ];
+
+  // Show inline notification if present (e.g. "no SRS cards due")
+  if (state?.warningText) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: state.warningText },
+    });
+    // Clear it after showing once
+    state.warningText = null;
+    setHomeSession(state);
+  }
+
+  blocks.push(...buildDashboardActions(slackUserId));
+  return blocks;
 }
 
 // ── View: Lesson + Exercise ─────────────────────────────────
@@ -995,17 +1010,10 @@ export function registerHomeHandler(app: App): void {
         const cards = getCardsDue(user.id);
 
         if (cards.length === 0) {
-          // Show a brief "no cards" message then stay on dashboard
-          // Use Slack's response_url isn't available here, so post a DM
-          try {
-            const dm = await client.conversations.open({ users: slackUserId });
-            if (dm.channel?.id) {
-              await client.chat.postMessage({
-                channel: dm.channel.id,
-                text: ':white_check_mark: No SRS cards due right now! Check back later.',
-              });
-            }
-          } catch { /* best effort */ }
+          // Show "no cards" inline on Home tab
+          const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+          state.warningText = ':white_check_mark: No SRS cards due right now! Check back later.';
+          setHomeSession(state);
           await publishHomeTab(client, slackUserId);
           return;
         }
