@@ -10,7 +10,7 @@
  *  1. Welcome message + self-assessment buttons
  *  2. "No Spanish" → skip test, place at unit 1
  *  3. Others → placement test (multiple choice buttons)
- *  4. Placement result → voice tutorial → channel guide → first exercise
+ *  4. Placement result → voice tutorial → channel guide → "/gringo next" prompt
  */
 import type { App } from '@slack/bolt';
 import { log } from '../utils/logger';
@@ -23,7 +23,6 @@ import {
   buildPlacementStartBlocks,
   buildVoiceTutorialBlocks,
   buildChannelGuideBlocks,
-  buildFirstExerciseBlocks,
 } from '../services/onboarding';
 import {
   startPlacementTest,
@@ -93,15 +92,12 @@ export async function sendWelcomeDm(client: any, slackUserId: string): Promise<v
 /**
  * Sends the post-placement messages (voice tutorial, channel guide, first exercise).
  */
-async function sendPostPlacementDm(client: any, channelId: string, level: number): Promise<void> {
+async function sendPostPlacementDm(client: any, channelId: string): Promise<void> {
   const voiceBlocks = buildVoiceTutorialBlocks();
   await postMessage(client, channelId, 'Voice memo tutorial', voiceBlocks);
 
   const guideBlocks = buildChannelGuideBlocks();
   await postMessage(client, channelId, 'Channel guide', guideBlocks);
-
-  const exerciseBlocks = buildFirstExerciseBlocks(level);
-  await postMessage(client, channelId, 'Your first exercise', exerciseBlocks);
 
   await postMessage(client, channelId, "You're all set! Use `/gringo next` to start your first curriculum lesson whenever you're ready. Dale!");
 }
@@ -166,7 +162,7 @@ export function registerOnboardingHandlers(app: App): void {
       if (channelId) {
         const skipBlocks = buildPlacementSkipBlocks();
         await postMessage(client, channelId, 'Placed at Unit 1', skipBlocks);
-        await sendPostPlacementDm(client, channelId, 1);
+        await sendPostPlacementDm(client, channelId);
       }
     } catch (err) {
       onboardLog.error(`Failed to handle no-spanish for ${slackUserId}: ${err}`);
@@ -244,7 +240,7 @@ export function registerOnboardingHandlers(app: App): void {
           welcomeSent.delete(slackUserId);
           clearActiveTest(slackUserId);
 
-          await sendPostPlacementDm(client, channelId, result.derivedLevel);
+          await sendPostPlacementDm(client, channelId);
         } else if (result.nextQuestion) {
           // Send next question
           const test = getActiveTest(slackUserId);

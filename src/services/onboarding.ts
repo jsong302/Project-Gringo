@@ -6,7 +6,7 @@
  *  2. Self-assessment via buttons (No Spanish / Some basics / Conversational / Advanced)
  *  3. Placement test (multiple choice) OR skip for beginners
  *  4. Voice memo tutorial
- *  5. Channel guide + first exercise prompt
+ *  5. Channel guide
  *
  * Each step is a separate message so the user can scroll back.
  */
@@ -149,7 +149,7 @@ export function buildVoiceTutorialBlocks(): Record<string, unknown>[] {
   ];
 }
 
-// ── Step 4: Channel Guide + First Exercise ─────────────────
+// ── Step 4: Channel Guide ───────────────────────────────────
 
 export function buildChannelGuideBlocks(): Record<string, unknown>[] {
   return [
@@ -173,58 +173,3 @@ export function buildChannelGuideBlocks(): Record<string, unknown>[] {
   ];
 }
 
-export function buildFirstExerciseBlocks(level: number): Record<string, unknown>[] {
-  const exercises: Record<number, { prompt: string; hint: string }> = {
-    1: {
-      prompt: 'Introduce yourself: say your name and where you\'re from.',
-      hint: 'Example: "Hola, me llamo Juan y soy de Nueva York."',
-    },
-    2: {
-      prompt: 'Tell me what you like to do in your free time.',
-      hint: 'Example: "Me gusta cocinar y escuchar música."',
-    },
-    3: {
-      prompt: 'Tell me about your last trip. Where did you go and what did you do?',
-      hint: 'Try using past tense: "Fui a...", "Visité...", "Comí..."',
-    },
-    4: {
-      prompt: 'What do you think about mate? Have you ever tried it?',
-      hint: 'Use voseo: "Yo creo que...", "A mí me parece..."',
-    },
-    5: {
-      prompt: 'Tell me a cool story from one of your trips.',
-      hint: 'Go all out — lunfardo, slang, whatever you\'ve got.',
-    },
-  };
-
-  const exercise = exercises[level] ?? exercises[1];
-
-  return [
-    {
-      type: 'header',
-      text: { type: 'plain_text', text: 'Your First Exercise', emoji: true },
-    },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: [
-          `*${exercise.prompt}*`,
-          '',
-          `_${exercise.hint}_`,
-          '',
-          'Reply right here with text or a voice memo. Give it a try!',
-        ].join('\n'),
-      },
-    },
-    {
-      type: 'context',
-      elements: [
-        {
-          type: 'mrkdwn',
-          text: 'If you get stuck, use `/gringo help` or type "no entiendo" and I\'ll explain in English.',
-        },
-      ],
-    },
-  ];
-}
