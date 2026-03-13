@@ -28,6 +28,7 @@ import {
 import type { GradeResult } from '../services/curriculumDelivery';
 import { getCurriculumCount, getCurriculum } from '../services/curriculum';
 import { getMemory } from '../services/userMemory';
+import { isAdmin } from '../services/settings';
 import { updateStreak } from '../services/userService';
 import {
   getHomeSession,
@@ -551,7 +552,8 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
 
     const prog = unitStatus.get(unit.id);
     const status = prog?.status ?? 'locked';
-    const isClickable = status === 'passed' || status === 'practicing' || status === 'active' || status === 'skipped';
+    const userIsAdmin = isAdmin(slackUserId);
+    const isClickable = userIsAdmin || status === 'passed' || status === 'practicing' || status === 'active' || status === 'skipped';
 
     let icon: string;
     let suffix = '';
@@ -1114,13 +1116,18 @@ export function registerHomeHandler(app: App): void {
         const unit = getUnit(unitId);
         if (!unit) return;
 
-        // Load shared lesson from bank
-        const lessonText = getLessonFromBank(unitId);
+        // Load shared lesson from bank (generate on-demand if missing)
+        let lessonText = getLessonFromBank(unitId);
         if (!lessonText) {
-          // No banked lesson — go back to dashboard
-          clearHomeSession(user.id);
+          // Show loading state
+          const loadingState = createDefaultSession(user.id, slackUserId);
+          loadingState.view = 'lesson';
+          loadingState.unit = unit;
+          loadingState.lessonText = '_Generating your lesson..._';
+          setHomeSession(loadingState);
           await publishHomeTab(client, slackUserId);
-          return;
+
+          lessonText = await generateAndBankLesson(unitId);
         }
 
         // Load or generate per-user exercise
