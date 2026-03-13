@@ -4,6 +4,7 @@ import {
   buildSelfAssessmentBlocks,
   buildPlacementSkipBlocks,
   buildPlacementStartBlocks,
+  buildResponseModeBlocks,
   buildVoiceTutorialBlocks,
   buildChannelGuideBlocks,
 } from '../../src/services/onboarding';
@@ -56,6 +57,17 @@ describe('Onboarding Block Builders', () => {
       const blocks = buildPlacementStartBlocks();
       const text = JSON.stringify(blocks);
       expect(text).toContain('multiple-choice');
+    });
+  });
+
+  describe('buildResponseModeBlocks', () => {
+    it('should have text and voice buttons', () => {
+      const blocks = buildResponseModeBlocks();
+      const actions = blocks.find((b: any) => b.type === 'actions') as any;
+      expect(actions).toBeDefined();
+      expect(actions.elements).toHaveLength(2);
+      expect(actions.elements[0].action_id).toBe('onboard_response_text');
+      expect(actions.elements[1].action_id).toBe('onboard_response_voice');
     });
   });
 

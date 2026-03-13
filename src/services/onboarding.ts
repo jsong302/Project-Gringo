@@ -5,8 +5,9 @@
  *  1. Welcome message explaining Gringo
  *  2. Self-assessment via buttons (No Spanish / Some basics / Conversational / Advanced)
  *  3. Placement test (multiple choice) OR skip for beginners
- *  4. Voice memo tutorial
- *  5. Channel guide
+ *  4. Response mode preference (text vs voice feedback)
+ *  5. Voice memo tutorial
+ *  6. Channel guide
  *
  * Each step is a separate message so the user can scroll back.
  */
@@ -113,6 +114,46 @@ export function buildPlacementStartBlocks(): Record<string, unknown>[] {
         type: 'mrkdwn',
         text: "Let's find out exactly where you should start. I'll ask you a few quick multiple-choice questions — just tap the answers!",
       },
+    },
+  ];
+}
+
+// ── Step 3b: Response Mode Preference ─────────────────────
+
+export function buildResponseModeBlocks(): Record<string, unknown>[] {
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '*How would you like to get feedback when you make a mistake?*',
+      },
+    },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: 'Text + pronunciation', emoji: true },
+          action_id: 'onboard_response_text',
+          value: 'text',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: 'Voice memo', emoji: true },
+          action_id: 'onboard_response_voice',
+          value: 'voice',
+        },
+      ],
+    },
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: "_Text = written feedback + Spanish audio clip | Voice = full explanation spoken in English + Spanish correction — you can change this anytime_",
+        },
+      ],
     },
   ];
 }

@@ -10,17 +10,19 @@
  *  1. Welcome message + self-assessment buttons
  *  2. "No Spanish" → skip test, place at unit 1
  *  3. Others → placement test (multiple choice buttons)
- *  4. Placement result → voice tutorial → channel guide → "/gringo next" prompt
+ *  4. Placement result → response mode preference → voice tutorial → channel guide → "/gringo next"
  */
 import type { App } from '@slack/bolt';
 import { log } from '../utils/logger';
-import { getOrCreateUser, updateLevel, markOnboarded, updateDisplayName } from '../services/userService';
+import { getOrCreateUser, updateLevel, markOnboarded, updateDisplayName, updateResponseMode } from '../services/userService';
+import type { ResponseMode } from '../services/userService';
 import { postMessage } from '../utils/slackHelpers';
 import {
   buildWelcomeBlocks,
   buildSelfAssessmentBlocks,
   buildPlacementSkipBlocks,
   buildPlacementStartBlocks,
+  buildResponseModeBlocks,
   buildVoiceTutorialBlocks,
   buildChannelGuideBlocks,
 } from '../services/onboarding';
@@ -90,9 +92,17 @@ export async function sendWelcomeDm(client: any, slackUserId: string): Promise<v
 }
 
 /**
- * Sends the post-placement messages (voice tutorial, channel guide, first exercise).
+ * After placement, ask the user their response mode preference.
  */
-async function sendPostPlacementDm(client: any, channelId: string): Promise<void> {
+async function sendResponseModePicker(client: any, channelId: string): Promise<void> {
+  const blocks = buildResponseModeBlocks();
+  await postMessage(client, channelId, 'How would you like feedback?', blocks);
+}
+
+/**
+ * Sends the final onboarding messages (voice tutorial, channel guide, go prompt).
+ */
+async function sendFinalOnboardingDm(client: any, channelId: string): Promise<void> {
   const voiceBlocks = buildVoiceTutorialBlocks();
   await postMessage(client, channelId, 'Voice memo tutorial', voiceBlocks);
 
@@ -162,7 +172,7 @@ export function registerOnboardingHandlers(app: App): void {
       if (channelId) {
         const skipBlocks = buildPlacementSkipBlocks();
         await postMessage(client, channelId, 'Placed at Unit 1', skipBlocks);
-        await sendPostPlacementDm(client, channelId);
+        await sendResponseModePicker(client, channelId);
       }
     } catch (err) {
       onboardLog.error(`Failed to handle no-spanish for ${slackUserId}: ${err}`);
@@ -240,7 +250,7 @@ export function registerOnboardingHandlers(app: App): void {
           welcomeSent.delete(slackUserId);
           clearActiveTest(slackUserId);
 
-          await sendPostPlacementDm(client, channelId);
+          await sendResponseModePicker(client, channelId);
         } else if (result.nextQuestion) {
           // Send next question
           const test = getActiveTest(slackUserId);
@@ -251,6 +261,31 @@ export function registerOnboardingHandlers(app: App): void {
         }
       } catch (err) {
         onboardLog.error(`Placement answer error for ${slackUserId}: ${err}`);
+      }
+    });
+  }
+
+  // ── Response mode preference handlers ──────────────────────
+
+  for (const mode of ['text', 'voice'] as ResponseMode[]) {
+    app.action(`onboard_response_${mode}`, async ({ ack, body, client }) => {
+      await ack();
+      const slackUserId = body.user.id;
+      const channelId = (body as any).channel?.id ?? (body as any).container?.channel_id;
+
+      try {
+        const user = getOrCreateUser(slackUserId);
+        updateResponseMode(user.id, mode);
+
+        const label = mode === 'voice' ? 'voice memos' : 'text + pronunciation';
+        onboardLog.info(`User ${slackUserId} chose response mode: ${mode}`);
+
+        if (channelId) {
+          await postMessage(client, channelId, `Got it — I'll give you feedback as *${label}*. You can change this anytime by telling me.`);
+          await sendFinalOnboardingDm(client, channelId);
+        }
+      } catch (err) {
+        onboardLog.error(`Response mode handler failed for ${slackUserId}: ${err}`);
       }
     });
   }
