@@ -140,14 +140,17 @@ ${context}`,
     maxTokens: 512,
   });
 
-  // Parse response
+  // Parse response — strip markdown fences and extract JSON
   let parsed: any;
   try {
-    const cleaned = response.text
-      .trim()
-      .replace(/^```(?:json)?\s*\n?/i, '')
-      .replace(/\n?```\s*$/i, '')
-      .trim();
+    let cleaned = response.text.trim();
+    // Strip markdown code fences
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+    // Try to find JSON object if there's surrounding text
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      cleaned = jsonMatch[0];
+    }
     parsed = JSON.parse(cleaned);
   } catch {
     // Fallback: use raw text as summary

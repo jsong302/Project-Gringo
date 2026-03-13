@@ -21,7 +21,7 @@ import {
 import { getUserCardStats } from '../services/srsRepository';
 import { getErrorSummary } from '../services/errorTracker';
 import { getLearnerFacts } from '../services/learnerFacts';
-import { getMemoryForPrompt } from '../services/userMemory';
+import { getMemory } from '../services/userMemory';
 
 const cmdLog = log.withScope('commands');
 
@@ -186,7 +186,6 @@ export function registerCommands(app: App): void {
           case 'profile': {
             const user = getOrCreateUser(command.user_id);
             const facts = getLearnerFacts(user.id, 15);
-            const memoryText = getMemoryForPrompt(user.id);
             const cardStats = getUserCardStats(user.id);
             const errorSummary = getErrorSummary(user.id);
 
@@ -212,12 +211,17 @@ export function registerCommands(app: App): void {
               }
             }
 
-            if (memoryText) {
+            const memory = getMemory(user.id);
+            if (memory) {
               sections.push(`\n*Learner Profile:*`);
-              sections.push(memoryText);
+              sections.push(memory.profileSummary);
+              if (memory.strengths) sections.push(`*Strengths:* ${memory.strengths}`);
+              if (memory.weaknesses) sections.push(`*Areas to improve:* ${memory.weaknesses}`);
+              if (memory.interests) sections.push(`*Interests:* ${memory.interests}`);
+              if (memory.pronunciationNotes) sections.push(`*Pronunciation:* ${memory.pronunciationNotes}`);
             }
 
-            if (!facts.length && !memoryText) {
+            if (!facts.length && !memory) {
               sections.push(`\n_I haven't built a profile for you yet — keep chatting and I'll learn your strengths and areas to improve!_`);
             }
 
