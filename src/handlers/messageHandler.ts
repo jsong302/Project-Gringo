@@ -88,7 +88,7 @@ async function uploadPronunciationClips(
   response: { pronunciations: string[] },
   client: any,
   channelId: string,
-  threadTs: string,
+  threadTs?: string,
 ): Promise<void> {
   if (response.pronunciations.length === 0) return;
 
@@ -118,7 +118,10 @@ export function registerMessageHandlers(app: App): void {
     const slackUserId = (message as any).user as string;
     const channelId = message.channel;
     const channelType = (message as any).channel_type ?? '';
-    const threadTs = (message as any).thread_ts ?? (message as any).ts;
+    const messageTs = (message as any).ts as string;
+    const threadTs = (message as any).thread_ts ?? messageTs;
+    // In DMs, reply as top-level messages (natural conversation); in channels, use threads
+    const replyTs = channelType === 'im' ? undefined : threadTs;
     const text = ((message as any).text ?? '') as string;
     const audioFile = getAudioFile(message);
 
@@ -186,7 +189,7 @@ export function registerMessageHandlers(app: App): void {
             if (channelType !== 'im') {
               await say({
                 text: "Hey! Looks like you haven't set up your profile yet. Check your DMs — I just sent you a welcome message to get started!",
-                thread_ts: threadTs,
+                thread_ts: replyTs,
               });
             }
           } catch (err) {
@@ -241,16 +244,16 @@ export function registerMessageHandlers(app: App): void {
             channelId,
             result.response.text,
             blocks as any[],
-            threadTs,
+            replyTs,
           );
 
           // Upload pronunciation demo clips if the LLM generated any
-          await uploadPronunciationClips(result.response, client, channelId, threadTs);
+          await uploadPronunciationClips(result.response, client, channelId, replyTs);
 
           // Celebrate level-up
           if (voiceXpResult.leveledUp) {
             const updatedUser = getOrCreateUser(slackUserId);
-            await postMessage(client, channelId, `🎉 *Level up!* You're now level ${updatedUser.level}. Keep it up!`, undefined, threadTs);
+            await postMessage(client, channelId, `🎉 *Level up!* You're now level ${updatedUser.level}. Keep it up!`, undefined, replyTs);
           }
 
           msgLog.info(`Voice memo processed for ${slackUserId}`);
@@ -271,18 +274,18 @@ export function registerMessageHandlers(app: App): void {
 
         await say({
           text: response.text,
-          thread_ts: threadTs,
+          thread_ts: replyTs,
         });
 
         // Upload pronunciation demo clips if the LLM generated any
-        await uploadPronunciationClips(response, client, channelId, threadTs);
+        await uploadPronunciationClips(response, client, channelId, replyTs);
 
         // Celebrate level-up
         if (textXpResult.leveledUp) {
           const updatedUser = getOrCreateUser(slackUserId);
           await say({
             text: `🎉 *Level up!* You're now level ${updatedUser.level}. Keep it up!`,
-            thread_ts: threadTs,
+            thread_ts: replyTs,
           });
         }
 
@@ -301,7 +304,7 @@ export function registerMessageHandlers(app: App): void {
         msgLog.error(`Message handler failed: ${err}`);
         await say({
           text: 'Something went wrong. Please try again in a moment.',
-          thread_ts: threadTs,
+          thread_ts: replyTs,
         });
       }
     });
