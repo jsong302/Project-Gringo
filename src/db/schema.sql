@@ -274,6 +274,23 @@ CREATE TABLE IF NOT EXISTS review_sessions (
 );
 
 -- ============================================================
+-- Lesson Plans (personalized curriculum per user)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS lesson_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    topic_order INTEGER NOT NULL,
+    topic TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'completed', 'skipped')),
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, topic_order)
+);
+
+-- ============================================================
 -- Indexes
 -- ============================================================
 
@@ -292,3 +309,4 @@ CREATE INDEX IF NOT EXISTS idx_phrases_category ON phrases(category, difficulty)
 CREATE INDEX IF NOT EXISTS idx_conv_messages_conv ON conversation_messages(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_learner_facts_user ON learner_facts(user_id, category);
 CREATE INDEX IF NOT EXISTS idx_review_sessions_user ON review_sessions(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_lesson_plans_user ON lesson_plans(user_id, status);

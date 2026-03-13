@@ -83,6 +83,7 @@ export function buildHelpBlocks(): Record<string, unknown>[] {
           '`/gringo level` — View or change your level (1-5)',
           '`/gringo stats` — Your streak, words learned, and progress',
           '`/gringo profile` — See what the bot knows about you',
+          '`/gringo plan` — View your personalized lesson plan',
           '`/gringo repaso` — Start a review session',
           '`/gringo onboard` — Re-send the welcome DM',
           '`/gringo notifications` — Manage notification preferences',

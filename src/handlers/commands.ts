@@ -22,6 +22,7 @@ import { getUserCardStats } from '../services/srsRepository';
 import { getErrorSummary } from '../services/errorTracker';
 import { getLearnerFacts } from '../services/learnerFacts';
 import { getMemory } from '../services/userMemory';
+import { getUserPlan, formatPlanBlocks, generatePlan, hasPlan } from '../services/lessonPlan';
 
 const cmdLog = log.withScope('commands');
 
@@ -231,6 +232,20 @@ export function registerCommands(app: App): void {
             ];
 
             await respondEphemeral(respond, 'Your Profile', blocks as any);
+            break;
+          }
+
+          case 'plan': {
+            const user = getOrCreateUser(command.user_id);
+            let plan = getUserPlan(user.id);
+
+            if (plan.length === 0) {
+              await respondEphemeral(respond, 'Generating your lesson plan...');
+              plan = await generatePlan(user.id, user.level);
+            }
+
+            const planBlocks = formatPlanBlocks(plan);
+            await respondEphemeral(respond, 'Your Lesson Plan', planBlocks as any);
             break;
           }
 

@@ -25,6 +25,7 @@ import {
   buildChannelGuideBlocks,
   buildFirstExerciseBlocks,
 } from '../services/onboarding';
+import { generatePlan } from '../services/lessonPlan';
 
 const onboardLog = log.withScope('onboarding');
 
@@ -139,6 +140,11 @@ export function registerOnboardingHandlers(app: App): void {
         const user = getOrCreateUser(slackUserId);
         updateLevel(user.id, level);
         markOnboarded(user.id);
+
+        // Generate personalized lesson plan in the background
+        generatePlan(user.id, level).catch((err) => {
+          onboardLog.error(`Failed to generate lesson plan for ${slackUserId}: ${err}`);
+        });
 
         if (channelId) {
           await sendPostLevelDm(client, channelId, level);
