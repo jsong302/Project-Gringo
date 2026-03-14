@@ -46,7 +46,6 @@ import {
   startExitExam,
   processExamAnswer,
   clearActiveExam,
-  getPendingExitExam,
   hasPassedExitExam,
   getExamAttemptCount,
   getQuestionCountForLevel,
@@ -162,8 +161,9 @@ function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
   const cardStats = getUserCardStats(user.id);
   const current = getCurrentUnit(user.id);
 
-  // Check if exit exam is needed
-  const pendingExam = getPendingExitExam(user.id, user.level);
+  // Ensure all units in the user's current level are unlocked (self-healing)
+  const { unlockLevel } = require('../services/curriculumDelivery');
+  unlockLevel(user.id, user.level);
 
   // Change button label based on whether user has an active lesson
   const hasActiveLesson = current && (current.progress.status === 'practicing' || current.progress.status === 'active');
@@ -186,19 +186,6 @@ function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
     style: 'primary',
   });
 
-  if (pendingExam !== null) {
-    const attempts = getExamAttemptCount(user.id, pendingExam);
-    const examLabel = attempts > 0
-      ? `:pencil: Retake Level ${pendingExam} Exit Exam`
-      : `:pencil: Take Level ${pendingExam} Exit Exam`;
-    buttons.push({
-      type: 'button',
-      text: { type: 'plain_text', text: examLabel, emoji: true },
-      action_id: 'home_start_exit_exam',
-      value: String(pendingExam),
-    });
-  }
-
   buttons.push(
     {
       type: 'button',
@@ -217,17 +204,10 @@ function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
     { type: 'actions', elements: buttons },
   ];
 
-  if (pendingExam !== null) {
-    blocks.push({
-      type: 'context',
-      elements: [{ type: 'mrkdwn', text: `_You've completed all units in Level ${pendingExam}. Pass the exit exam to unlock Level ${pendingExam + 1}!_` }],
-    });
-  } else {
-    blocks.push({
-      type: 'context',
-      elements: [{ type: 'mrkdwn', text: '_This dashboard updates each time you open the app._' }],
-    });
-  }
+  blocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: '_This dashboard updates each time you open the app._' }],
+  });
 
   return blocks;
 }
