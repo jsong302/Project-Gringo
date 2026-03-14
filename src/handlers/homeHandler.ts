@@ -29,7 +29,7 @@ import {
 import type { GradeResult, StructuredLesson } from '../services/curriculumDelivery';
 import { getCurriculumCount, getCurriculum } from '../services/curriculum';
 import { getMemory } from '../services/userMemory';
-import { hasElevatedAccess } from '../services/settings';
+import { hasElevatedAccess, isAdmin, isTutor } from '../services/settings';
 import { updateStreak } from '../services/userService';
 import {
   getHomeSession,
@@ -70,11 +70,18 @@ function buildProgressBar(completed: number, total: number, width: number = 10):
   return ':large_green_square:'.repeat(filled) + ':white_square:'.repeat(width - filled);
 }
 
+function getRoleLabel(slackUserId: string): string {
+  if (isAdmin(slackUserId)) return 'Admin';
+  if (isTutor(slackUserId)) return 'Tutor';
+  return 'Student';
+}
+
 function buildProfileBlocks(slackUserId: string): Record<string, unknown>[] {
   const user = getOrCreateUser(slackUserId);
   const progress = getUserCurriculumProgress(user.id);
   const responseLabel = user.responseMode === 'voice' ? 'Voice' : 'Text';
   const streakEmoji = user.streakDays >= 7 ? ' :fire:' : '';
+  const role = getRoleLabel(slackUserId);
 
   return [
     {
@@ -87,7 +94,7 @@ function buildProfileBlocks(slackUserId: string): Record<string, unknown>[] {
         type: 'mrkdwn',
         text: [
           `*:bust_in_silhouette: Profile*`,
-          `*Name:* ${user.displayName ?? 'Unknown'}`,
+          `*Name:* ${user.displayName ?? 'Unknown'}  |  *Role:* ${role}`,
           `*Level:* ${progress.level}/5  |  *Streak:* ${user.streakDays} day${user.streakDays !== 1 ? 's' : ''}${streakEmoji}`,
           `*Feedback:* ${responseLabel}  |  *Timezone:* ${user.timezone}`,
         ].join('\n'),
