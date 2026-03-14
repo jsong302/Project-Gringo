@@ -696,6 +696,59 @@ function buildSrsSummaryView(slackUserId: string, state: HomeSessionState): Reco
 
 // ── View: Curriculum Browser ────────────────────────────────
 
+/**
+ * Append an exit exam row to blocks for a given level band.
+ * Shows one of 3 states: passed, ready to take, or locked (units remaining).
+ */
+function appendExamRow(
+  blocks: Record<string, unknown>[],
+  units: ReturnType<typeof getCurriculum>,
+  unitStatus: Map<number, { status: string; bestScore: number | null }>,
+  userId: number,
+  levelBand: number,
+): void {
+  const levelUnits = units.filter(u => u.levelBand === levelBand);
+  const allPassed = levelUnits.every(u => {
+    const s = unitStatus.get(u.id)?.status;
+    return s === 'passed' || s === 'skipped';
+  });
+
+  if (allPassed && hasPassedExitExam(userId, levelBand)) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `:white_check_mark: _Level ${levelBand} Exit Exam — passed_` }],
+    });
+  } else if (allPassed) {
+    const count = getQuestionCountForLevel(levelBand);
+    if (count >= 5) {
+      blocks.push({
+        type: 'actions',
+        elements: [{
+          type: 'button',
+          text: { type: 'plain_text', text: `:pencil: Take Level ${levelBand} Exit Exam`, emoji: true },
+          action_id: 'home_start_exit_exam',
+          value: String(levelBand),
+          style: 'primary',
+        }],
+      });
+    } else {
+      blocks.push({
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: `:lock: _Level ${levelBand} Exit Exam — no questions generated yet_` }],
+      });
+    }
+  } else {
+    const remaining = levelUnits.filter(u => {
+      const s = unitStatus.get(u.id)?.status;
+      return s !== 'passed' && s !== 'skipped';
+    }).length;
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `:lock: _Level ${levelBand} Exit Exam — ${remaining} unit${remaining !== 1 ? 's' : ''} remaining_` }],
+    });
+  }
+}
+
 function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
   const user = getOrCreateUser(slackUserId);
   const units = getCurriculum();
@@ -761,36 +814,9 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
     if (unit.levelBand !== currentBand) {
       flushButtons();
 
-      // After completing a level section, show exit exam status/button
+      // Show exit exam row between levels (always visible in one of 3 states)
       if (currentBand > 0 && currentBand <= 4) {
-        const levelUnits = units.filter(u => u.levelBand === currentBand);
-        const allPassed = levelUnits.every(u => {
-          const s = unitStatus.get(u.id)?.status;
-          return s === 'passed' || s === 'skipped';
-        });
-        if (allPassed) {
-          const passed = hasPassedExitExam(user.id, currentBand);
-          if (passed) {
-            blocks.push({
-              type: 'context',
-              elements: [{ type: 'mrkdwn', text: `:white_check_mark: _Level ${currentBand} Exit Exam — passed_` }],
-            });
-          } else {
-            const count = getQuestionCountForLevel(currentBand);
-            if (count >= 5) {
-              blocks.push({
-                type: 'actions',
-                elements: [{
-                  type: 'button',
-                  text: { type: 'plain_text', text: `:pencil: Take Level ${currentBand} Exit Exam`, emoji: true },
-                  action_id: 'home_start_exit_exam',
-                  value: String(currentBand),
-                  style: 'primary',
-                }],
-              });
-            }
-          }
-        }
+        appendExamRow(blocks, units, unitStatus, user.id, currentBand);
         blocks.push({ type: 'divider' });
       }
 
@@ -855,34 +881,7 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
 
   // Show exit exam for the last level band
   if (currentBand > 0 && currentBand <= 4) {
-    const levelUnits = units.filter(u => u.levelBand === currentBand);
-    const allPassed = levelUnits.every(u => {
-      const s = unitStatus.get(u.id)?.status;
-      return s === 'passed' || s === 'skipped';
-    });
-    if (allPassed) {
-      const passed = hasPassedExitExam(user.id, currentBand);
-      if (passed) {
-        blocks.push({
-          type: 'context',
-          elements: [{ type: 'mrkdwn', text: `:white_check_mark: _Level ${currentBand} Exit Exam — passed_` }],
-        });
-      } else {
-        const count = getQuestionCountForLevel(currentBand);
-        if (count >= 5) {
-          blocks.push({
-            type: 'actions',
-            elements: [{
-              type: 'button',
-              text: { type: 'plain_text', text: `:pencil: Take Level ${currentBand} Exit Exam`, emoji: true },
-              action_id: 'home_start_exit_exam',
-              value: String(currentBand),
-              style: 'primary',
-            }],
-          });
-        }
-      }
-    }
+    appendExamRow(blocks, units, unitStatus, user.id, currentBand);
   }
 
   // Slack Home tab has a 100-block limit — truncate if needed
