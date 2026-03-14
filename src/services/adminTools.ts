@@ -1596,32 +1596,61 @@ register('regenerate_lunfardo_queue_item', async (input) => {
 
 // ── Fill content queue (both types) ─────────────────────────
 
-register('fill_content_queue', (input) => {
-  const { isQueueGenerationRunning, generateLessonQueue, generateLunfardoQueue } = require('./contentQueue');
-  if (isQueueGenerationRunning()) {
-    return JSON.stringify({ success: false, message: 'Queue generation is already running.' });
-  }
+register('fill_content_queue', async (input) => {
+  const { isLessonGenerationRunning, isLunfardoGenerationRunning, generateLessonQueue, generateLunfardoQueue } = require('./contentQueue');
 
   const contentType = input.content_type as string | undefined;
   const days = (input.days as number) ?? undefined;
 
   if (contentType === 'daily_lesson') {
-    generateLessonQueue(days ?? 10).then((r: any) => toolLog.info(`Lesson queue fill: ${JSON.stringify(r)}`)).catch((e: any) => toolLog.error(`Lesson queue fill failed: ${e}`));
-    return JSON.stringify({ success: true, message: `Generating daily lessons for the next ${days ?? 10} weekdays in the background.` });
+    if (isLessonGenerationRunning()) {
+      return JSON.stringify({ success: false, message: 'Lesson queue generation is already running.' });
+    }
+    const result = await generateLessonQueue(days ?? 10);
+    return JSON.stringify({ success: true, ...result, message: `Generated ${result.generated} daily lessons (${result.errors} errors).` });
   }
   if (contentType === 'lunfardo') {
-    generateLunfardoQueue(days ?? 14).then((r: any) => toolLog.info(`Lunfardo queue fill: ${JSON.stringify(r)}`)).catch((e: any) => toolLog.error(`Lunfardo queue fill failed: ${e}`));
-    return JSON.stringify({ success: true, message: `Generating lunfardo posts for the next ${days ?? 14} days in the background.` });
+    if (isLunfardoGenerationRunning()) {
+      return JSON.stringify({ success: false, message: 'Lunfardo queue generation is already running.' });
+    }
+    const result = await generateLunfardoQueue(days ?? 14);
+    return JSON.stringify({ success: true, ...result, message: `Generated ${result.generated} lunfardo posts (${result.errors} errors).` });
   }
 
-  // Both types
-  generateLessonQueue(days ?? 10).then((r: any) => {
-    toolLog.info(`Lesson queue fill: ${JSON.stringify(r)}`);
-    return generateLunfardoQueue(days ?? 14);
-  }).then((r: any) => {
-    toolLog.info(`Lunfardo queue fill: ${JSON.stringify(r)}`);
-  }).catch((e: any) => toolLog.error(`Queue fill failed: ${e}`));
-  return JSON.stringify({ success: true, message: `Generating daily lessons (${days ?? 10} weekdays) and lunfardo posts (${days ?? 14} days) in the background.` });
+  // Both types — run in parallel since they have separate locks now
+  const busyParts: string[] = [];
+  if (isLessonGenerationRunning()) busyParts.push('lessons');
+  if (isLunfardoGenerationRunning()) busyParts.push('lunfardo');
+  if (busyParts.length === 2) {
+    return JSON.stringify({ success: false, message: 'Both queue generations are already running.' });
+  }
+
+  const results: any = {};
+  const promises: Promise<void>[] = [];
+
+  if (!isLessonGenerationRunning()) {
+    promises.push(
+      generateLessonQueue(days ?? 10).then((r: any) => { results.lessons = r; }),
+    );
+  }
+  if (!isLunfardoGenerationRunning()) {
+    promises.push(
+      generateLunfardoQueue(days ?? 14).then((r: any) => { results.lunfardo = r; }),
+    );
+  }
+
+  await Promise.all(promises);
+
+  const parts: string[] = [];
+  if (results.lessons) parts.push(`${results.lessons.generated} lessons (${results.lessons.errors} errors)`);
+  if (results.lunfardo) parts.push(`${results.lunfardo.generated} lunfardo posts (${results.lunfardo.errors} errors)`);
+
+  return JSON.stringify({
+    success: true,
+    lessons: results.lessons ?? null,
+    lunfardo: results.lunfardo ?? null,
+    message: `Generated ${parts.join(' and ')}.`,
+  });
 });
 
 // ── Exit Exam Question CRUD tools ────────────────────────────

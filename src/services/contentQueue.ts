@@ -391,10 +391,19 @@ export function rerenderLunfardoBlocks(contentJson: string): string {
 
 // ── Batch generation ────────────────────────────────────────
 
-let generating = false;
+let generatingLessons = false;
+let generatingLunfardo = false;
 
 export function isQueueGenerationRunning(): boolean {
-  return generating;
+  return generatingLessons || generatingLunfardo;
+}
+
+export function isLessonGenerationRunning(): boolean {
+  return generatingLessons;
+}
+
+export function isLunfardoGenerationRunning(): boolean {
+  return generatingLunfardo;
 }
 
 function getNextWeekdays(startDate: Date, count: number, existingDates: Set<string>): string[] {
@@ -444,10 +453,10 @@ function getQueuedLessonTopics(): string[] {
 }
 
 export async function generateLessonQueue(days: number = 10): Promise<{
-  generated: number; errors: number;
+  generated: number; errors: number; errorDetails?: string[];
 }> {
-  if (generating) return { generated: 0, errors: 0 };
-  generating = true;
+  if (generatingLessons) return { generated: 0, errors: 0 };
+  generatingLessons = true;
 
   try {
     const existingDates = getExistingDates('lesson_queue');
@@ -460,6 +469,8 @@ export async function generateLessonQueue(days: number = 10): Promise<{
       return { generated: 0, errors: 0 };
     }
 
+    queueLog.info(`Generating lessons for ${dates.length} dates: ${dates.join(', ')}`);
+
     const postedTopics = getRecentLessonTopics(10);
     const queuedTopics = getQueuedLessonTopics();
     const allRecentTopics = [...new Set([...postedTopics, ...queuedTopics])];
@@ -471,6 +482,7 @@ export async function generateLessonQueue(days: number = 10): Promise<{
 
     let generated = 0;
     let errors = 0;
+    const errorDetails: string[] = [];
 
     for (const date of dates) {
       try {
@@ -487,22 +499,24 @@ export async function generateLessonQueue(days: number = 10): Promise<{
         queueLog.info(`Queued daily lesson for ${date}: "${lesson.title}"`);
       } catch (err) {
         errors++;
-        queueLog.error(`Failed to generate lesson for ${date}: ${err}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        errorDetails.push(`${date}: ${msg}`);
+        queueLog.error(`Failed to generate lesson for ${date}: ${msg}`);
       }
     }
 
     queueLog.info(`Lesson queue: ${generated} generated, ${errors} errors`);
-    return { generated, errors };
+    return { generated, errors, errorDetails };
   } finally {
-    generating = false;
+    generatingLessons = false;
   }
 }
 
 export async function generateLunfardoQueue(days: number = 14): Promise<{
-  generated: number; errors: number;
+  generated: number; errors: number; errorDetails?: string[];
 }> {
-  if (generating) return { generated: 0, errors: 0 };
-  generating = true;
+  if (generatingLunfardo) return { generated: 0, errors: 0 };
+  generatingLunfardo = true;
 
   try {
     const existingDates = getExistingDates('lunfardo_queue');
@@ -515,8 +529,11 @@ export async function generateLunfardoQueue(days: number = 14): Promise<{
       return { generated: 0, errors: 0 };
     }
 
+    queueLog.info(`Generating lunfardo for ${dates.length} dates: ${dates.join(', ')}`);
+
     let generated = 0;
     let errors = 0;
+    const errorDetails: string[] = [];
 
     for (const date of dates) {
       try {
@@ -531,14 +548,16 @@ export async function generateLunfardoQueue(days: number = 14): Promise<{
         queueLog.info(`Queued lunfardo for ${date}: "${post.word}"`);
       } catch (err) {
         errors++;
-        queueLog.error(`Failed to generate lunfardo for ${date}: ${err}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        errorDetails.push(`${date}: ${msg}`);
+        queueLog.error(`Failed to generate lunfardo for ${date}: ${msg}`);
       }
     }
 
     queueLog.info(`Lunfardo queue: ${generated} generated, ${errors} errors`);
-    return { generated, errors };
+    return { generated, errors, errorDetails };
   } finally {
-    generating = false;
+    generatingLunfardo = false;
   }
 }
 
