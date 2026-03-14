@@ -340,6 +340,13 @@ function buildGradeView(slackUserId: string, state: HomeSessionState): Record<st
       });
     }
 
+    if (grade.pronunciationNotes) {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `:studio_microphone: *Pronunciation:* ${grade.pronunciationNotes}` },
+      });
+    }
+
     blocks.push({ type: 'divider' });
     blocks.push(...buildProgressBlocks(slackUserId));
     blocks.push(...buildDashboardActions(slackUserId));
@@ -371,6 +378,10 @@ function buildGradeView(slackUserId: string, state: HomeSessionState): Record<st
 
     if (grade.correction) {
       lines.push('', `*Correct answer:* _${grade.correction}_`);
+    }
+
+    if (grade.pronunciationNotes) {
+      lines.push('', `:studio_microphone: *Pronunciation:* ${grade.pronunciationNotes}`);
     }
 
     blocks.push({

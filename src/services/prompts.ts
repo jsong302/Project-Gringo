@@ -377,7 +377,8 @@ Respond with JSON only:
   "passed": <true if score >= pass_threshold>,
   "feedback": "<2-3 sentences: what they did well, what to improve. Be encouraging but honest. Write in English.>",
   "errors": ["<specific error 1>", "<specific error 2>"],
-  "correction": "<The correct answer in Spanish. A single natural sentence or phrase showing how to say it properly. Only include when score < pass_threshold. Use empty string if they passed. IMPORTANT: Never include template placeholders like [your city/country] or [your name] — always fill these in with realistic examples (e.g. 'Buenos Aires', 'María'). The correction will be read aloud as audio, so it must be speakable.>"
+  "correction": "<The correct answer in Spanish. A single natural sentence or phrase showing how to say it properly. Only include when score < pass_threshold. Use empty string if they passed. IMPORTANT: Never include template placeholders like [your city/country] or [your name] — always fill these in with realistic examples (e.g. 'Buenos Aires', 'María'). The correction will be read aloud as audio, so it must be speakable.>",
+  "pronunciationNotes": "<Only for voice memos. 1-2 sentences of pronunciation tips based on which words had low speech-recognition confidence. Focus on practical advice: how to move the mouth, what sounds to emphasize, common English-speaker pitfalls in Spanish. If word confidence data is provided, words with <80% confidence likely need attention. Accept Argentine pronunciation norms (e.g. ll/y as 'sh', dropped final 's', voseo intonation) — don't flag those as errors. Use empty string if no pronunciation issues or if this was a text response.>"
 }
 
 If there are no errors, use an empty array for errors and empty string for correction. Be specific about errors — don't just say "grammar", say what the actual mistake was.`,

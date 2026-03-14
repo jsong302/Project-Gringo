@@ -223,13 +223,15 @@ export function registerMessageHandlers(app: App): void {
           if (current && current.progress.status === 'practicing') {
             // Transcribe voice memo if needed
             let responseText = text;
+            let wordConfidence: import('../services/stt').WordInfo[] | undefined;
             if (audioFile && !text) {
               const { transcribeAudio } = await import('../services/stt');
               const audioUrl = audioFile.url_private ?? '';
               const botToken = process.env.SLACK_BOT_TOKEN ?? '';
               const transcript = await transcribeAudio(audioUrl, botToken);
               responseText = transcript.transcript;
-              msgLog.info(`Transcribed voice memo for exercise: "${responseText.slice(0, 80)}"`);
+              wordConfidence = transcript.words;
+              msgLog.info(`Transcribed voice memo for exercise: "${responseText.slice(0, 80)}" (${transcript.words.length} words, avg confidence: ${transcript.words.length > 0 ? (transcript.words.reduce((s, w) => s + w.confidence, 0) / transcript.words.length * 100).toFixed(0) : 0}%)`);
             }
 
             if (!responseText) return;
@@ -239,7 +241,7 @@ export function registerMessageHandlers(app: App): void {
             // Get the exercise text from the unit
             const exerciseText = current.unit.exercisePrompt ?? current.unit.title;
             const exerciseInputMode = (audioFile && !text) ? 'voice' as const : 'text' as const;
-            const grade = await gradeExerciseResponse(current.unit, exerciseText, responseText, user.id, exerciseInputMode);
+            const grade = await gradeExerciseResponse(current.unit, exerciseText, responseText, user.id, exerciseInputMode, wordConfidence);
 
             // If the LLM determined this isn't an exercise attempt, fall through to charla
             if (!grade.isAttempt) {

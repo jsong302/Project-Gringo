@@ -14,6 +14,7 @@ import { getPromptOrThrow, interpolate } from './prompts';
 import { getCurriculum, getUnit, getUnitByOrder, getCurriculumCount, type CurriculumUnit } from './curriculum';
 import { getMemoryForPrompt } from './userMemory';
 import { getUserById, updateLevel } from './userService';
+import type { WordInfo } from './stt';
 
 const delLog = log.withScope('curriculum-delivery');
 
@@ -58,6 +59,8 @@ export interface GradeResult {
   feedback: string;
   errors: string[];
   correction: string;
+  /** Pronunciation-specific feedback when grading voice memos */
+  pronunciationNotes: string;
   /** False if the student's message was not an exercise attempt (e.g. a question or navigation request) */
   isAttempt: boolean;
 }
@@ -600,6 +603,7 @@ export async function gradeExerciseResponse(
   studentResponse: string,
   userId: number,
   inputMode: 'text' | 'voice' = 'text',
+  wordConfidence?: WordInfo[],
 ): Promise<GradeResult> {
   const user = getUserById(userId);
 
@@ -611,11 +615,24 @@ export async function gradeExerciseResponse(
     pass_threshold: String(unit.passThreshold),
   });
 
+  // Build word confidence context for voice memos
+  let confidenceContext = '';
+  if (inputMode === 'voice' && wordConfidence && wordConfidence.length > 0) {
+    const wordScores = wordConfidence
+      .map((w) => `"${w.word}" (${(w.confidence * 100).toFixed(0)}%)`)
+      .join(', ');
+    const lowConfWords = wordConfidence.filter((w) => w.confidence < 0.80);
+    confidenceContext = `\n\n## Speech Recognition Confidence (word-level)\n${wordScores}\n`;
+    if (lowConfWords.length > 0) {
+      confidenceContext += `\nWords with low recognition confidence (<80%): ${lowConfWords.map((w) => `"${w.word}" at ${(w.confidence * 100).toFixed(0)}%`).join(', ')}\nLow confidence may indicate unclear pronunciation — include specific tips in "pronunciationNotes".`;
+    }
+  }
+
   const response = await callLlm({
     system: systemPrompt,
     messages: [{
       role: 'user',
-      content: `Exercise given:\n${exerciseText}\n\nStudent's response${inputMode === 'voice' ? ' (spoken via voice memo, transcribed below)' : ''}:\n${studentResponse}\n\nGrade this response. Return JSON: {"isAttempt": boolean, "score": 0-5, "passed": boolean, "feedback": "string", "errors": ["string"]}\n\nIMPORTANT about "isAttempt": Set false ONLY if the response is clearly in English and is a question, navigation request, or chat (e.g. "show unit 1", "help me", "go back"). If the response contains ANY Spanish words or phrases, it IS an exercise attempt — set "isAttempt": true and grade it normally, even if it's incomplete or only partially answers the exercise.`,
+      content: `Exercise given:\n${exerciseText}\n\nStudent's response${inputMode === 'voice' ? ' (spoken via voice memo, transcribed below)' : ''}:\n${studentResponse}${confidenceContext}\n\nGrade this response. Return JSON: {"isAttempt": boolean, "score": 0-5, "passed": boolean, "feedback": "string", "errors": ["string"], "correction": "string"${inputMode === 'voice' ? ', "pronunciationNotes": "string"' : ''}}\n\nIMPORTANT about "isAttempt": Set false ONLY if the response is clearly in English and is a question, navigation request, or chat (e.g. "show unit 1", "help me", "go back"). If the response contains ANY Spanish words or phrases, it IS an exercise attempt — set "isAttempt": true and grade it normally, even if it's incomplete or only partially answers the exercise.`,
     }],
     temperature: 0.3,
     maxTokens: 512,
@@ -635,6 +652,7 @@ export async function gradeExerciseResponse(
       feedback: parsed.feedback ?? 'No feedback provided.',
       errors: Array.isArray(parsed.errors) ? parsed.errors : [],
       correction: typeof parsed.correction === 'string' ? parsed.correction : '',
+      pronunciationNotes: typeof parsed.pronunciationNotes === 'string' ? parsed.pronunciationNotes : '',
     };
   } catch {
     delLog.warn('Failed to parse grading response, defaulting to score 3');
@@ -645,6 +663,7 @@ export async function gradeExerciseResponse(
       feedback: response.text.slice(0, 500),
       errors: [],
       correction: '',
+      pronunciationNotes: '',
     };
   }
 }
