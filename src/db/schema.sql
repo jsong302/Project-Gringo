@@ -423,6 +423,29 @@ CREATE TABLE IF NOT EXISTS exit_exam_attempts (
 CREATE INDEX IF NOT EXISTS idx_exit_exam_questions_level ON exit_exam_questions(level_band, status);
 CREATE INDEX IF NOT EXISTS idx_exit_exam_attempts_user ON exit_exam_attempts(user_id, level_band);
 
+-- ============================================================
+-- Content Queue (pre-generated daily lessons & lunfardo posts)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS content_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_type TEXT NOT NULL CHECK (content_type IN ('daily_lesson', 'lunfardo')),
+    scheduled_date TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'sent', 'archived')),
+    title TEXT,
+    content_json TEXT NOT NULL,
+    blocks_json TEXT,
+    difficulty INTEGER,
+    slack_channel_id TEXT,
+    slack_message_ts TEXT,
+    posted_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_queue_type_status ON content_queue(content_type, status, scheduled_date);
+
 CREATE INDEX IF NOT EXISTS idx_audit_log_admin ON admin_audit_log(admin_slack_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_log_tool ON admin_audit_log(tool_name, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_log_target ON admin_audit_log(target_type, target_id);

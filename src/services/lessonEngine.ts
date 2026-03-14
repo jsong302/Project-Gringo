@@ -169,7 +169,7 @@ export function getRecentLessonTopics(limit = 7): string[] {
 
 // ── Lesson generation ───────────────────────────────────────
 
-export async function generateDailyLesson(level: number): Promise<{
+export async function generateDailyLesson(level: number, additionalRecentTopics?: string[]): Promise<{
   lesson: DailyLesson;
   blocks: any[];
 }> {
@@ -186,10 +186,13 @@ export async function generateDailyLesson(level: number): Promise<{
     ? `Student lesson plans:\n${planContextParts.join('\n\n')}`
     : '';
 
-  // Build previous lessons context
+  // Build previous lessons context (combine posted + queued topics for dedup)
   const recentTopics = getRecentLessonTopics();
-  const previousLessons = recentTopics.length > 0
-    ? `Previous lessons (do NOT repeat these topics): ${recentTopics.join(', ')}`
+  const allTopics = additionalRecentTopics
+    ? [...new Set([...recentTopics, ...additionalRecentTopics])]
+    : recentTopics;
+  const previousLessons = allTopics.length > 0
+    ? `Previous lessons (do NOT repeat these topics): ${allTopics.join(', ')}`
     : '';
 
   const prompt = interpolate(promptTemplate, {

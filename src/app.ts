@@ -11,7 +11,7 @@ import { createDefaultJobs, scheduleJobs, stopAllJobs } from './scheduler/cron';
 import { initLlm } from './services/llm';
 import { initTts } from './services/tts';
 import { initStt } from './services/stt';
-import { generateDailyLesson, generateLunfardoPost, logLesson, createCardsFromLesson, createCardsFromLunfardo } from './services/lessonEngine';
+import { generateDailyLesson, generateLunfardoPost, logLesson, createCardsFromLesson, createCardsFromLunfardo, type DailyLesson, type LunfardoPost } from './services/lessonEngine';
 import { getAllUsers } from './services/userService';
 import { recoverSessions } from './services/reviewSession';
 import { recoverHomeSessions } from './services/homeSession';
@@ -21,6 +21,7 @@ import { log } from './utils/logger';
 import { seedCurriculumIfEmpty, ensureVerbBasicsUnit, syncCurriculumPrompts } from './services/curriculum';
 import { migrateExistingUsers } from './services/curriculumMigration';
 import { ensureAuditTable } from './services/auditLog';
+import { ensureContentQueueTable, getNextReady, markAsSent } from './services/contentQueue';
 
 const bootLog = log.withScope('boot');
 
@@ -54,6 +55,7 @@ const bootLog = log.withScope('boot');
 
   // 4b. Ensure audit log table exists
   ensureAuditTable();
+  ensureContentQueueTable();
 
   // 4c. Seed shared curriculum and migrate existing users
   seedCurriculumIfEmpty();
@@ -92,21 +94,45 @@ const bootLog = log.withScope('boot');
   const jobs = createDefaultJobs({
     postDailyLesson: async () => {
       try {
-        const users = getAllUsers();
-        const avgLevel = users.length > 0
-          ? Math.round(users.reduce((sum, u) => sum + u.level, 0) / users.length)
-          : 2;
-        const { lesson, blocks } = await generateDailyLesson(avgLevel);
         const channelId = getSetting('channels.lessons', '');
         if (!channelId) {
           bootLog.warn('No channels.lessons setting configured — skipping daily lesson post');
           return;
         }
+
+        // Try to pull from content queue first
+        const queued = getNextReady('daily_lesson');
+        let lesson: DailyLesson;
+        let blocks: any[];
+
+        if (queued) {
+          lesson = JSON.parse(queued.contentJson) as DailyLesson;
+          blocks = queued.blocksJson ? JSON.parse(queued.blocksJson) : [];
+          bootLog.info(`Posting queued daily lesson: "${lesson.title}" (queue id ${queued.id})`);
+        } else {
+          // Fallback: generate on-the-fly
+          bootLog.warn('Content queue empty for daily lesson — generating on-the-fly');
+          const users = getAllUsers();
+          const avgLevel = users.length > 0
+            ? Math.round(users.reduce((sum, u) => sum + u.level, 0) / users.length)
+            : 2;
+          const result = await generateDailyLesson(avgLevel);
+          lesson = result.lesson;
+          blocks = result.blocks;
+        }
+
         const postResult = await app.client.chat.postMessage({ channel: channelId, text: lesson.title, blocks });
         const messageTs = postResult.ts ?? '';
+
+        // Mark queue item as sent
+        if (queued) {
+          markAsSent(queued.id, channelId, messageTs);
+        }
+
         logLesson({ lessonType: 'daily', topic: lesson.title, contentJson: JSON.stringify(lesson), slackChannelId: channelId, slackMessageTs: messageTs });
 
         // Auto-create SRS cards from lesson vocabulary for active users
+        const users = getAllUsers();
         const activeUserIds = users.map((u) => u.id);
         createCardsFromLesson(lesson, activeUserIds);
 
@@ -122,14 +148,38 @@ const bootLog = log.withScope('boot');
     },
     postLunfardoDelDia: async () => {
       try {
-        const { post, blocks } = await generateLunfardoPost();
         const channelId = getSetting('channels.lunfardo', '');
         if (!channelId) {
           bootLog.warn('No channels.lunfardo setting configured — skipping lunfardo post');
           return;
         }
-        await app.client.chat.postMessage({ channel: channelId, text: 'Lunfardo del día: ' + post.word, blocks });
-        logLesson({ lessonType: 'lunfardo', topic: post.word, contentJson: JSON.stringify(post), slackChannelId: channelId });
+
+        // Try to pull from content queue first
+        const queued = getNextReady('lunfardo');
+        let post: LunfardoPost;
+        let blocks: any[];
+
+        if (queued) {
+          post = JSON.parse(queued.contentJson) as LunfardoPost;
+          blocks = queued.blocksJson ? JSON.parse(queued.blocksJson) : [];
+          bootLog.info(`Posting queued lunfardo: "${post.word}" (queue id ${queued.id})`);
+        } else {
+          // Fallback: generate on-the-fly
+          bootLog.warn('Content queue empty for lunfardo — generating on-the-fly');
+          const result = await generateLunfardoPost();
+          post = result.post;
+          blocks = result.blocks;
+        }
+
+        const postResult = await app.client.chat.postMessage({ channel: channelId, text: 'Lunfardo del día: ' + post.word, blocks });
+        const messageTs = postResult.ts ?? '';
+
+        // Mark queue item as sent
+        if (queued) {
+          markAsSent(queued.id, channelId, messageTs);
+        }
+
+        logLesson({ lessonType: 'lunfardo', topic: post.word, contentJson: JSON.stringify(post), slackChannelId: channelId, slackMessageTs: messageTs });
 
         // Auto-create SRS cards from lunfardo word for all users
         const lunfardoUsers = getAllUsers();
