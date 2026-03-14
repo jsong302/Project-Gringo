@@ -281,6 +281,11 @@ function buildLessonView(slackUserId: string, state: HomeSessionState): Record<s
         },
         {
           type: 'button',
+          text: { type: 'plain_text', text: ':loud_sound: Listen to Phrases' },
+          action_id: 'home_listen_phrases',
+        },
+        {
+          type: 'button',
           text: { type: 'plain_text', text: ':microphone: Send voice memo in DMs' },
           action_id: 'home_voice_hint',
         },
@@ -299,6 +304,30 @@ function buildLessonView(slackUserId: string, state: HomeSessionState): Record<s
   }
 
   return blocks;
+}
+
+// ── Helper: extract Spanish phrases from lesson markdown ────
+
+// Matches both *phrase* (Slack bold) and **phrase** (markdown bold)
+const SPANISH_PHRASE_RE = /(?<!\w)\*{1,2}([^*]+)\*{1,2}/g;
+const ENGLISH_STOP_WORDS = /^(the|and|or|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|could|should|may|might|shall|can|must|to|of|in|for|on|at|by|with|from|up|about|into|through|during|before|after|above|below|between|out|off|over|under|again|further|then|once|here|there|when|where|why|how|all|both|each|few|more|most|other|some|such|no|not|only|own|same|so|than|too|very|just|because|but|if|this|that|these|those|what|which|who|whom|step|exercise|answer|example|tip|note|practice|lesson|unit|level|try|use|say|now|let|get|go|make|like|good|also|one|two|three|your|you|we|they|it|he|she|i|me|my|our|his|her|its|their|them|us|him|check|back|next|new|need)\b/i;
+
+function extractSpanishPhrases(lessonText: string): string[] {
+  const matches: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = SPANISH_PHRASE_RE.exec(lessonText)) !== null) {
+    const phrase = match[1].trim();
+    // Skip single-char, pure-English headings, and emoji-only strings
+    if (phrase.length < 2) continue;
+    if (/^[:\w\s]+:$/.test(phrase)) continue; // emoji shortcodes
+    // Skip phrases that start with common English words (likely section headers)
+    const firstWord = phrase.split(/\s/)[0];
+    if (ENGLISH_STOP_WORDS.test(firstWord)) continue;
+    // Keep phrases with Spanish characters or that look like Spanish
+    matches.push(phrase);
+  }
+  // Deduplicate and cap at 8 phrases
+  return [...new Set(matches)].slice(0, 8);
 }
 
 // ── View: Grade Feedback ────────────────────────────────────
@@ -405,6 +434,11 @@ function buildGradeView(slackUserId: string, state: HomeSessionState): Record<st
           text: { type: 'plain_text', text: ':memo: Try Again' },
           action_id: 'home_exercise_answer',
           style: 'primary',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: ':loud_sound: Listen to Phrases' },
+          action_id: 'home_listen_phrases',
         },
         {
           type: 'button',
@@ -988,6 +1022,60 @@ export function registerHomeHandler(app: App): void {
         }
       } catch (err) {
         homeLog.error(`Exercise grading failed: ${err}`);
+      }
+    });
+  });
+
+  // ── Listen to Phrases (generate audio → send to DM) ─────
+  app.action('home_listen_phrases', async ({ ack, body, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      try {
+        const user = getOrCreateUser(slackUserId);
+        const state = getHomeSession(user.id);
+        if (!state?.lessonText) {
+          homeLog.warn(`Listen to phrases: no lesson text for ${slackUserId}`);
+          return;
+        }
+
+        const phrases = extractSpanishPhrases(state.lessonText);
+        if (phrases.length === 0) {
+          homeLog.info(`No Spanish phrases extracted for ${slackUserId}`);
+          const dm = await client.conversations.open({ users: slackUserId });
+          const dmChannel = dm.channel?.id;
+          if (dmChannel) {
+            await client.chat.postMessage({
+              channel: dmChannel,
+              text: ':loud_sound: No key phrases found in this lesson to pronounce.',
+            });
+          }
+          return;
+        }
+
+        const dm = await client.conversations.open({ users: slackUserId });
+        const dmChannel = dm.channel?.id;
+        if (!dmChannel) return;
+
+        // Send a header message
+        const headerResult = await client.chat.postMessage({
+          channel: dmChannel,
+          text: `:loud_sound: *Pronunciation for Unit ${state.unit?.unitOrder ?? ''}:* ${state.unit?.title ?? 'Lesson'}\n_${phrases.length} phrase(s) — listen and repeat!_`,
+        });
+        const threadTs = headerResult.ts;
+
+        // Generate and upload audio for each phrase in the thread
+        const audioBuffers = await generatePronunciationAudio(phrases);
+        for (let i = 0; i < phrases.length; i++) {
+          if (audioBuffers[i]) {
+            await uploadAudioToSlack(client, dmChannel, audioBuffers[i]!, phrases[i], threadTs);
+          }
+        }
+
+        homeLog.info(`Sent ${phrases.length} pronunciation clip(s) to DM for ${slackUserId}`);
+      } catch (err) {
+        homeLog.error(`Listen to phrases failed: ${err}`);
       }
     });
   });

@@ -561,9 +561,10 @@ ${prompt}
 Present the exercise clearly. The student will respond and their answer will be graded.
 Keep the exercise focused and achievable. For Level 1-2, keep it simple (1 exercise). For Level 3+, you can include 2-3 parts.
 IMPORTANT: Students are on English keyboards — do NOT ask for accents, tildes, ¿, ¡, ñ, or "proper Spanish punctuation". Accept plain text answers.
+IMPORTANT: Use Argentine Spanish (voseo). Always use "vos" instead of "tú" in examples and questions. E.g. "¿Dónde estás vos?" not "¿Dónde estás tú?"
 
 ## Formatting rules (IMPORTANT — this is for Slack, not a website)
-- Use Slack formatting: *bold* for emphasis, _italic_ for side notes
+- Use Slack formatting: *bold* for emphasis (single asterisks, NOT double **), _italic_ for side notes
 - Do NOT use markdown headers (#, ##, etc.) — they render as literal # in Slack
 - Do NOT use horizontal rules (---) or excessive dashes
 - Do NOT include a title or heading — the exercise is already labeled in the UI

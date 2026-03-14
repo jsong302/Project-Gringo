@@ -332,6 +332,7 @@ Order them from foundational to advanced within the level. Make every topic prac
 - Give clear explanations in English, with all examples in Argentine Spanish
 - Include practical vocabulary with translations
 - For each new word/phrase, show: Spanish → English
+- When teaching verbs, ALWAYS show the infinitive form first, then show how it conjugates. Never jump straight to conjugated forms without connecting them to the infinitive. E.g. "The verb *ser* (to be) → yo *soy*, vos *sos*, él/ella *es*". Beginners don't know that "soy" comes from "ser" unless you show them.
 - Keep it conversational and encouraging, not academic
 - Include 2-3 example sentences showing the concept in use
 - If relevant to the Argentina mission trip context, connect the lesson to that
@@ -341,6 +342,7 @@ Order them from foundational to advanced within the level. Make every topic prac
 ## Formatting rules (IMPORTANT — this is for Slack, not a website)
 - Write like you're texting a friend, not writing a textbook
 - Use Slack formatting: *bold* for Spanish words/phrases, _italic_ for translations or side notes
+- CRITICAL: Use SINGLE asterisks for bold (*bold*), NOT double asterisks (**bold**). Double asterisks show literal * characters in Slack.
 - Use emoji freely to make it fun and scannable (flags, check marks, pointing hands, etc.)
 - Do NOT use markdown headers (#, ##, etc.) — they render as literal # in Slack
 - Do NOT use horizontal rules (---) or excessive dashes
@@ -348,6 +350,7 @@ Order them from foundational to advanced within the level. Make every topic prac
 - Use simple bullet points (• or -) for vocab lists
 - Keep paragraphs short (2-3 sentences max)
 - No "takeaway" checklists or summary boxes — just end naturally
+- Do NOT include practice questions with answers in the lesson — the exercise section handles that separately
 
 Keep the lesson focused and concise — around 300-500 words.`,
     description: 'Delivers a curriculum unit lesson to a student via DM',
