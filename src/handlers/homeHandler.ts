@@ -49,6 +49,7 @@ import {
   getPendingExitExam,
   hasPassedExitExam,
   getExamAttemptCount,
+  getQuestionCountForLevel,
   type ExitExamState,
 } from '../services/exitExam';
 
@@ -729,6 +730,21 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
     { type: 'divider' },
   ];
 
+  // Determine which levels are locked behind unpassed exit exams
+  // If level N has all units passed but no exam passed, levels > N are gated
+  let gatedAboveLevel = 999; // units above this level are locked
+  for (let lvl = 1; lvl <= 4; lvl++) {
+    const lvlUnits = units.filter(u => u.levelBand === lvl);
+    const allDone = lvlUnits.every(u => {
+      const s = unitStatus.get(u.id)?.status;
+      return s === 'passed' || s === 'skipped';
+    });
+    if (allDone && !hasPassedExitExam(user.id, lvl)) {
+      gatedAboveLevel = lvl;
+      break;
+    }
+  }
+
   // Group units by level band
   let currentBand = 0;
   // Batch clickable units into action blocks (max 5 buttons per actions block)
@@ -744,6 +760,40 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
   for (const unit of units) {
     if (unit.levelBand !== currentBand) {
       flushButtons();
+
+      // After completing a level section, show exit exam status/button
+      if (currentBand > 0 && currentBand <= 4) {
+        const levelUnits = units.filter(u => u.levelBand === currentBand);
+        const allPassed = levelUnits.every(u => {
+          const s = unitStatus.get(u.id)?.status;
+          return s === 'passed' || s === 'skipped';
+        });
+        if (allPassed) {
+          const passed = hasPassedExitExam(user.id, currentBand);
+          if (passed) {
+            blocks.push({
+              type: 'context',
+              elements: [{ type: 'mrkdwn', text: `:white_check_mark: _Level ${currentBand} Exit Exam — passed_` }],
+            });
+          } else {
+            const count = getQuestionCountForLevel(currentBand);
+            if (count >= 5) {
+              blocks.push({
+                type: 'actions',
+                elements: [{
+                  type: 'button',
+                  text: { type: 'plain_text', text: `:pencil: Take Level ${currentBand} Exit Exam`, emoji: true },
+                  action_id: 'home_start_exit_exam',
+                  value: String(currentBand),
+                  style: 'primary',
+                }],
+              });
+            }
+          }
+        }
+        blocks.push({ type: 'divider' });
+      }
+
       currentBand = unit.levelBand;
       blocks.push({
         type: 'section',
@@ -754,7 +804,9 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
     const prog = unitStatus.get(unit.id);
     const status = prog?.status ?? 'locked';
     const userIsAdmin = isAdmin(slackUserId);
-    const isClickable = userIsAdmin || status === 'passed' || status === 'practicing' || status === 'active' || status === 'skipped';
+    // Units in levels above a gated exam are locked (unless admin)
+    const gatedByExam = !userIsAdmin && unit.levelBand > gatedAboveLevel;
+    const isClickable = !gatedByExam && (userIsAdmin || status === 'passed' || status === 'practicing' || status === 'active' || status === 'skipped');
 
     let icon: string;
     let suffix = '';
@@ -800,6 +852,38 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
     }
   }
   flushButtons();
+
+  // Show exit exam for the last level band
+  if (currentBand > 0 && currentBand <= 4) {
+    const levelUnits = units.filter(u => u.levelBand === currentBand);
+    const allPassed = levelUnits.every(u => {
+      const s = unitStatus.get(u.id)?.status;
+      return s === 'passed' || s === 'skipped';
+    });
+    if (allPassed) {
+      const passed = hasPassedExitExam(user.id, currentBand);
+      if (passed) {
+        blocks.push({
+          type: 'context',
+          elements: [{ type: 'mrkdwn', text: `:white_check_mark: _Level ${currentBand} Exit Exam — passed_` }],
+        });
+      } else {
+        const count = getQuestionCountForLevel(currentBand);
+        if (count >= 5) {
+          blocks.push({
+            type: 'actions',
+            elements: [{
+              type: 'button',
+              text: { type: 'plain_text', text: `:pencil: Take Level ${currentBand} Exit Exam`, emoji: true },
+              action_id: 'home_start_exit_exam',
+              value: String(currentBand),
+              style: 'primary',
+            }],
+          });
+        }
+      }
+    }
+  }
 
   // Slack Home tab has a 100-block limit — truncate if needed
   if (blocks.length > 95) {
