@@ -270,9 +270,25 @@ function structuredLessonToBlocks(lessonText: string): Record<string, unknown>[]
   const lesson = parseLessonText(lessonText);
   const blocks: Record<string, unknown>[] = [];
 
-  // Legacy freeform text — single section block
+  // Legacy freeform text — chunk to stay under 3000-char Slack limit
   if (lesson.version === 0) {
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lesson.sections[0]?.body ?? lessonText } });
+    const body = lesson.sections[0]?.body ?? lessonText;
+    if (body.length <= 3000) {
+      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: body } });
+    } else {
+      const paragraphs = body.split(/\n\n/);
+      let chunk = '';
+      for (const p of paragraphs) {
+        if (chunk.length + p.length + 2 > 3000) {
+          blocks.push({ type: 'section', text: { type: 'mrkdwn', text: chunk.trim() } });
+          chunk = '';
+        }
+        chunk += (chunk ? '\n\n' : '') + p;
+      }
+      if (chunk.trim()) {
+        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: chunk.trim() } });
+      }
+    }
     return blocks;
   }
 
