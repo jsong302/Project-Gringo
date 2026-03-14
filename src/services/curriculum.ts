@@ -281,13 +281,13 @@ const DEFAULT_CURRICULUM: DefaultUnit[] = [
   {
     order: 4, topic: 'ser_estar', title: 'Ser vs Estar', levelBand: 1,
     description: 'Identity vs state/location. Soy americano, estoy en Buenos Aires, estoy cansado.',
-    lessonPrompt: 'Teach the difference between ser (identity, origin, profession) and estar (location, feelings, temporary states). Use Argentine examples: Soy de Nueva York, Estoy en Buenos Aires, Estoy re cansado.',
+    lessonPrompt: 'Teach the difference between ser (identity, origin, profession) and estar (location, feelings, temporary states). IMPORTANT: Show the full present-tense conjugation for BOTH verbs (yo, vos, él/ella, nosotros, ellos) before using any conjugated forms in examples. Students need to see the full conjugation table so they know where "soy", "sos", "estoy", "estás" come from. Then give Argentine examples: Soy de Nueva York, Estoy en Buenos Aires, Estoy re cansado.',
     exercisePrompt: 'Give 5 fill-in-the-blank sentences where the student chooses ser or estar. Mix identity, location, and temporary states.',
   },
   {
     order: 5, topic: 'present_tense', title: 'Present Tense (Regular Verbs)', levelBand: 1,
     description: '-ar/-er/-ir verb conjugation. Daily actions: hablar, comer, vivir.',
-    lessonPrompt: 'Teach regular present tense conjugation for -ar (hablar), -er (comer), -ir (vivir). Focus on yo, vos, él/ella forms since those are most useful in conversation. Mention that Argentine Spanish uses "vos" instead of "tú".',
+    lessonPrompt: 'Teach regular present tense conjugation for -ar (hablar), -er (comer), -ir (vivir). Show the FULL conjugation table for each verb type (yo, vos, él/ella, nosotros, ellos) — this is their first real conjugation table, so make it clear and organized. Focus on yo, vos, él/ella forms as the most useful in conversation, but show all forms so students see the pattern. Mention that Argentine Spanish uses "vos" instead of "tú" and that vos has its own special endings (hablás, comés, vivís).',
     exercisePrompt: 'Ask the student to conjugate 3 regular verbs in present tense for yo, vos, and él/ella forms. Then ask them to write 2 sentences about their daily routine.',
   },
   {
