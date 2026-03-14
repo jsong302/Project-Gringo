@@ -18,7 +18,7 @@ export interface HomeSessionState {
   userId: number;
   slackUserId: string;
   /** Current view */
-  view: 'dashboard' | 'lesson' | 'grade' | 'srs_review' | 'srs_summary' | 'curriculum' | 'exit_exam' | 'exit_exam_result';
+  view: 'dashboard' | 'lesson' | 'grade' | 'srs_review' | 'srs_summary' | 'curriculum' | 'exit_exam' | 'exit_exam_result' | 'admin_lesson_queue' | 'admin_lunfardo_queue' | 'admin_lesson_detail' | 'admin_lunfardo_detail';
   /** Generated lesson text (markdown) */
   lessonText: string | null;
   /** Generated exercise text (markdown) */
@@ -33,6 +33,8 @@ export interface HomeSessionState {
   srsReview: SrsHomeReview | null;
   /** Exit exam level band (set when view is exit_exam or exit_exam_result) */
   exitExamLevel: number | null;
+  /** Queue item ID for admin detail views */
+  adminQueueItemId: number | null;
   updatedAt: number;
 }
 
@@ -74,6 +76,7 @@ export function createDefaultSession(userId: number, slackUserId: string): HomeS
     warningText: null,
     srsReview: null,
     exitExamLevel: null,
+    adminQueueItemId: null,
     updatedAt: Date.now(),
   };
 }
@@ -94,6 +97,7 @@ function persistSession(state: HomeSessionState): void {
     lastGradeResult: state.lastGradeResult,
     srsReview: state.srsReview,
     exitExamLevel: state.exitExamLevel,
+    adminQueueItemId: state.adminQueueItemId,
   }));
   db.run(
     `INSERT OR REPLACE INTO home_sessions (user_id, slack_user_id, state_json, updated_at)
@@ -140,6 +144,7 @@ export function recoverHomeSessions(): number {
         warningText: null,
         srsReview: stateJson.srsReview ?? null,
         exitExamLevel: stateJson.exitExamLevel ?? null,
+        adminQueueItemId: stateJson.adminQueueItemId ?? null,
         updatedAt: Date.now(),
       };
       sessions.set(userId, state);

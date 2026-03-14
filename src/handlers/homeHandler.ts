@@ -51,6 +51,14 @@ import {
   getQuestionCountForLevel,
   type ExitExamState,
 } from '../services/exitExam';
+import {
+  getQueueStats,
+  getLessonQueueItems,
+  getLunfardoQueueItems,
+  getLessonQueueItem,
+  getLunfardoQueueItem,
+} from '../services/contentQueue';
+import type { DailyLesson, LunfardoPost } from '../services/lessonEngine';
 
 const homeLog = log.withScope('home-tab');
 
@@ -235,6 +243,277 @@ function buildDashboardView(slackUserId: string): Record<string, unknown>[] {
   }
 
   blocks.push(...buildDashboardActions(slackUserId));
+  blocks.push(...buildAdminQueueSection(slackUserId));
+  return blocks;
+}
+
+// ── Admin: Content Queue Section (dashboard) ────────────────
+
+function formatShortDate(dateStr: string): string {
+  const [, m, d] = dateStr.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[parseInt(m, 10) - 1]} ${parseInt(d, 10)}`;
+}
+
+function buildAdminQueueSection(slackUserId: string): Record<string, unknown>[] {
+  if (!isAdmin(slackUserId)) return [];
+
+  const stats = getQueueStats();
+  const lessons = getLessonQueueItems({ status: 'ready', limit: 3 });
+  const lunfardo = getLunfardoQueueItems({ status: 'ready', limit: 3 });
+
+  const blocks: Record<string, unknown>[] = [
+    { type: 'divider' },
+    { type: 'header', text: { type: 'plain_text', text: ':clipboard: Admin — Content Queues', emoji: true } },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Daily Lessons*\nReady: ${stats.lessons.ready}\nNext: ${stats.lessons.nextDate ? formatShortDate(stats.lessons.nextDate) : 'none'}` },
+        { type: 'mrkdwn', text: `*Lunfardo del Día*\nReady: ${stats.lunfardo.ready}\nNext: ${stats.lunfardo.nextDate ? formatShortDate(stats.lunfardo.nextDate) : 'none'}` },
+      ],
+    },
+  ];
+
+  // Upcoming lessons preview
+  if (lessons.length > 0) {
+    const lines = lessons.map(item => `• ${formatShortDate(item.scheduledDate)} — ${item.title ?? 'Untitled'}`);
+    if (stats.lessons.ready > 3) lines.push(`  _+ ${stats.lessons.ready - 3} more..._`);
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Upcoming Lessons*\n${lines.join('\n')}` } });
+  } else {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '_Lesson queue is empty — use the chat agent to generate lessons._' } });
+  }
+
+  // Upcoming lunfardo preview
+  if (lunfardo.length > 0) {
+    const lines = lunfardo.map(item => `• ${formatShortDate(item.scheduledDate)} — ${item.word ?? 'Unknown'}`);
+    if (stats.lunfardo.ready > 3) lines.push(`  _+ ${stats.lunfardo.ready - 3} more..._`);
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Upcoming Lunfardo*\n${lines.join('\n')}` } });
+  } else {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '_Lunfardo queue is empty — use the chat agent to generate posts._' } });
+  }
+
+  // Action buttons (only if items exist)
+  const queueButtons: Record<string, unknown>[] = [];
+  if (stats.lessons.ready > 0) {
+    queueButtons.push({
+      type: 'button',
+      text: { type: 'plain_text', text: `View All Lessons (${stats.lessons.ready})` },
+      action_id: 'home_admin_lesson_queue',
+    });
+  }
+  if (stats.lunfardo.ready > 0) {
+    queueButtons.push({
+      type: 'button',
+      text: { type: 'plain_text', text: `View All Lunfardo (${stats.lunfardo.ready})` },
+      action_id: 'home_admin_lunfardo_queue',
+    });
+  }
+  if (queueButtons.length > 0) {
+    blocks.push({ type: 'actions', elements: queueButtons });
+  }
+
+  return blocks;
+}
+
+// ── Admin: Lesson Queue List View ───────────────────────────
+
+function buildAdminLessonQueueView(slackUserId: string): Record<string, unknown>[] {
+  const stats = getQueueStats();
+  const items = getLessonQueueItems({ status: 'ready', limit: 20 });
+
+  const blocks: Record<string, unknown>[] = [
+    { type: 'header', text: { type: 'plain_text', text: ':clipboard: Admin — Daily Lesson Queue', emoji: true } },
+    { type: 'section', text: { type: 'mrkdwn', text: `*${stats.lessons.ready} ready | ${stats.lessons.sent} sent*` } },
+  ];
+
+  if (items.length === 0) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '_No lessons queued. Use the chat agent to generate lessons._' } });
+  } else {
+    // Slack allows max 5 buttons per actions block — group items in chunks of 5
+    for (let i = 0; i < items.length; i += 5) {
+      const chunk = items.slice(i, i + 5);
+      blocks.push({
+        type: 'actions',
+        elements: chunk.map(item => ({
+          type: 'button',
+          text: { type: 'plain_text', text: `${formatShortDate(item.scheduledDate)} — ${(item.title ?? 'Untitled').slice(0, 60)}` },
+          action_id: `home_admin_lesson_${item.id}`,
+        })),
+      });
+    }
+  }
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'actions',
+    elements: [{
+      type: 'button',
+      text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Dashboard', emoji: true },
+      action_id: 'home_back_dashboard',
+    }],
+  });
+
+  return blocks;
+}
+
+// ── Admin: Lunfardo Queue List View ─────────────────────────
+
+function buildAdminLunfardoQueueView(slackUserId: string): Record<string, unknown>[] {
+  const stats = getQueueStats();
+  const items = getLunfardoQueueItems({ status: 'ready', limit: 20 });
+
+  const blocks: Record<string, unknown>[] = [
+    { type: 'header', text: { type: 'plain_text', text: ':clipboard: Admin — Lunfardo Queue', emoji: true } },
+    { type: 'section', text: { type: 'mrkdwn', text: `*${stats.lunfardo.ready} ready | ${stats.lunfardo.sent} sent*` } },
+  ];
+
+  if (items.length === 0) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '_No lunfardo posts queued. Use the chat agent to generate posts._' } });
+  } else {
+    for (let i = 0; i < items.length; i += 5) {
+      const chunk = items.slice(i, i + 5);
+      blocks.push({
+        type: 'actions',
+        elements: chunk.map(item => ({
+          type: 'button',
+          text: { type: 'plain_text', text: `${formatShortDate(item.scheduledDate)} — ${(item.word ?? 'Unknown').slice(0, 60)}` },
+          action_id: `home_admin_lunfardo_${item.id}`,
+        })),
+      });
+    }
+  }
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'actions',
+    elements: [{
+      type: 'button',
+      text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Dashboard', emoji: true },
+      action_id: 'home_back_dashboard',
+    }],
+  });
+
+  return blocks;
+}
+
+// ── Admin: Lesson Detail View ───────────────────────────────
+
+function buildAdminLessonDetailView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
+  const item = state.adminQueueItemId ? getLessonQueueItem(state.adminQueueItemId) : null;
+  if (!item) {
+    return [
+      { type: 'section', text: { type: 'mrkdwn', text: ':warning: Lesson queue item not found.' } },
+      { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Queue', emoji: true }, action_id: 'home_admin_back_lessons' }] },
+    ];
+  }
+
+  let content: DailyLesson | null = null;
+  try { content = JSON.parse(item.contentJson) as DailyLesson; } catch { /* ignore */ }
+
+  const blocks: Record<string, unknown>[] = [
+    { type: 'header', text: { type: 'plain_text', text: `:books: Lesson Queue Item #${item.id}`, emoji: true } },
+    { type: 'context', elements: [{ type: 'mrkdwn', text: `Date: *${formatShortDate(item.scheduledDate)}* | Difficulty: *${item.difficulty ?? '—'}* | Status: *${item.status}*` }] },
+  ];
+
+  if (content) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*${content.title}*` } });
+    blocks.push({ type: 'divider' });
+
+    // Grammar topic
+    if (content.grammar_topic) {
+      const topicText = content.grammar_topic.length > 2900
+        ? content.grammar_topic.slice(0, 2900) + '...'
+        : content.grammar_topic;
+      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Topic:*\n${topicText}` } });
+    }
+
+    // Vocabulary
+    if (content.vocabulary?.length) {
+      const vocabLines = content.vocabulary.map(v => `• *${v.word}* — ${v.meaning}\n  _"${v.example}"_`);
+      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Vocabulary:*\n${vocabLines.join('\n')}` } });
+    }
+
+    // Exercise
+    if (content.exercise) {
+      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*:microphone: Exercise:*\n${content.exercise}` } });
+    }
+
+    // Cultural note
+    if (content.cultural_note) {
+      blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `:flag-ar: *Cultural Note:* ${content.cultural_note}` }] });
+    }
+  } else {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '_Could not parse lesson content._' } });
+  }
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'actions',
+    elements: [
+      { type: 'button', text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Queue', emoji: true }, action_id: 'home_admin_back_lessons' },
+      { type: 'button', text: { type: 'plain_text', text: ':pencil2: Edit in Chat', emoji: true }, action_id: `home_admin_edit_lesson_${item.id}` },
+    ],
+  });
+
+  return blocks;
+}
+
+// ── Admin: Lunfardo Detail View ─────────────────────────────
+
+function buildAdminLunfardoDetailView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
+  const item = state.adminQueueItemId ? getLunfardoQueueItem(state.adminQueueItemId) : null;
+  if (!item) {
+    return [
+      { type: 'section', text: { type: 'mrkdwn', text: ':warning: Lunfardo queue item not found.' } },
+      { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Queue', emoji: true }, action_id: 'home_admin_back_lunfardo' }] },
+    ];
+  }
+
+  let content: LunfardoPost | null = null;
+  try { content = JSON.parse(item.contentJson) as LunfardoPost; } catch { /* ignore */ }
+
+  const blocks: Record<string, unknown>[] = [
+    { type: 'header', text: { type: 'plain_text', text: `:speech_balloon: Lunfardo Queue Item #${item.id}`, emoji: true } },
+    { type: 'context', elements: [{ type: 'mrkdwn', text: `Date: *${formatShortDate(item.scheduledDate)}* | Status: *${item.status}*` }] },
+  ];
+
+  if (content) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*${content.word}*` } });
+    blocks.push({ type: 'divider' });
+
+    // Meanings
+    let meaningText = `*In Spanish:* ${content.meaning_es}\n*In English:* ${content.meaning_en}`;
+    if (content.vesre) meaningText += `\n*Vesre:* ${content.vesre}`;
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: meaningText } });
+
+    // Etymology
+    if (content.etymology) {
+      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Etymology:*\n${content.etymology}` } });
+    }
+
+    // Examples
+    if (content.examples?.length) {
+      const exLines = content.examples.map(ex => `• _"${ex}"_`);
+      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Examples:*\n${exLines.join('\n')}` } });
+    }
+
+    // Category
+    if (content.category) {
+      blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `Category: *${content.category}*` }] });
+    }
+  } else {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '_Could not parse lunfardo content._' } });
+  }
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'actions',
+    elements: [
+      { type: 'button', text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Queue', emoji: true }, action_id: 'home_admin_back_lunfardo' },
+      { type: 'button', text: { type: 'plain_text', text: ':pencil2: Edit in Chat', emoji: true }, action_id: `home_admin_edit_lunfardo_${item.id}` },
+    ],
+  });
+
   return blocks;
 }
 
@@ -1135,6 +1414,14 @@ export function buildHomeBlocks(slackUserId: string): Record<string, unknown>[] 
       return buildExitExamView(slackUserId, state);
     case 'exit_exam_result':
       return buildExitExamResultView(slackUserId, state);
+    case 'admin_lesson_queue':
+      return isAdmin(slackUserId) ? buildAdminLessonQueueView(slackUserId) : buildDashboardView(slackUserId);
+    case 'admin_lunfardo_queue':
+      return isAdmin(slackUserId) ? buildAdminLunfardoQueueView(slackUserId) : buildDashboardView(slackUserId);
+    case 'admin_lesson_detail':
+      return isAdmin(slackUserId) ? buildAdminLessonDetailView(slackUserId, state) : buildDashboardView(slackUserId);
+    case 'admin_lunfardo_detail':
+      return isAdmin(slackUserId) ? buildAdminLunfardoDetailView(slackUserId, state) : buildDashboardView(slackUserId);
     default:
       return buildDashboardView(slackUserId);
   }
@@ -1829,6 +2116,160 @@ export function registerHomeHandler(app: App): void {
         await publishHomeTab(client, slackUserId);
       } catch (err) {
         homeLog.error(`Exit exam quit failed: ${err}`);
+      }
+    });
+  });
+
+  // ── Admin Queue Navigation ──────────────────────────────
+
+  app.action('home_admin_lesson_queue', async ({ ack, body, client }) => {
+    await ack();
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      if (!isAdmin(slackUserId)) return;
+      try {
+        const user = getOrCreateUser(slackUserId);
+        const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+        state.view = 'admin_lesson_queue';
+        state.adminQueueItemId = null;
+        setHomeSession(state);
+        await publishHomeTab(client, slackUserId);
+      } catch (err) {
+        homeLog.error(`Admin lesson queue nav failed: ${err}`);
+      }
+    });
+  });
+
+  app.action('home_admin_lunfardo_queue', async ({ ack, body, client }) => {
+    await ack();
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      if (!isAdmin(slackUserId)) return;
+      try {
+        const user = getOrCreateUser(slackUserId);
+        const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+        state.view = 'admin_lunfardo_queue';
+        state.adminQueueItemId = null;
+        setHomeSession(state);
+        await publishHomeTab(client, slackUserId);
+      } catch (err) {
+        homeLog.error(`Admin lunfardo queue nav failed: ${err}`);
+      }
+    });
+  });
+
+  // Back to queue from detail views
+  app.action('home_admin_back_lessons', async ({ ack, body, client }) => {
+    await ack();
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      if (!isAdmin(slackUserId)) return;
+      try {
+        const user = getOrCreateUser(slackUserId);
+        const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+        state.view = 'admin_lesson_queue';
+        state.adminQueueItemId = null;
+        setHomeSession(state);
+        await publishHomeTab(client, slackUserId);
+      } catch (err) {
+        homeLog.error(`Admin back to lessons failed: ${err}`);
+      }
+    });
+  });
+
+  app.action('home_admin_back_lunfardo', async ({ ack, body, client }) => {
+    await ack();
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      if (!isAdmin(slackUserId)) return;
+      try {
+        const user = getOrCreateUser(slackUserId);
+        const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+        state.view = 'admin_lunfardo_queue';
+        state.adminQueueItemId = null;
+        setHomeSession(state);
+        await publishHomeTab(client, slackUserId);
+      } catch (err) {
+        homeLog.error(`Admin back to lunfardo failed: ${err}`);
+      }
+    });
+  });
+
+  // Lesson item click (regex: home_admin_lesson_<id>)
+  app.action(/^home_admin_lesson_\d+$/, async ({ ack, body, client, action }) => {
+    await ack();
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      if (!isAdmin(slackUserId)) return;
+      try {
+        const actionId = (action as any).action_id as string;
+        const itemId = parseInt(actionId.replace('home_admin_lesson_', ''), 10);
+        const user = getOrCreateUser(slackUserId);
+        const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+        state.view = 'admin_lesson_detail';
+        state.adminQueueItemId = itemId;
+        setHomeSession(state);
+        await publishHomeTab(client, slackUserId);
+      } catch (err) {
+        homeLog.error(`Admin lesson detail nav failed: ${err}`);
+      }
+    });
+  });
+
+  // Lunfardo item click (regex: home_admin_lunfardo_<id>)
+  app.action(/^home_admin_lunfardo_\d+$/, async ({ ack, body, client, action }) => {
+    await ack();
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      if (!isAdmin(slackUserId)) return;
+      try {
+        const actionId = (action as any).action_id as string;
+        const itemId = parseInt(actionId.replace('home_admin_lunfardo_', ''), 10);
+        const user = getOrCreateUser(slackUserId);
+        const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+        state.view = 'admin_lunfardo_detail';
+        state.adminQueueItemId = itemId;
+        setHomeSession(state);
+        await publishHomeTab(client, slackUserId);
+      } catch (err) {
+        homeLog.error(`Admin lunfardo detail nav failed: ${err}`);
+      }
+    });
+  });
+
+  // Edit in Chat buttons (send DM with edit hint)
+  app.action(/^home_admin_edit_lesson_\d+$/, async ({ ack, body, client }) => {
+    await ack();
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      if (!isAdmin(slackUserId)) return;
+      try {
+        const actionId = (body as any).actions?.[0]?.action_id as string;
+        const itemId = actionId.replace('home_admin_edit_lesson_', '');
+        await client.chat.postMessage({
+          channel: slackUserId,
+          text: `:pencil2: To edit this lesson, send me:\n\`edit lesson queue item ${itemId}\``,
+        });
+      } catch (err) {
+        homeLog.error(`Admin edit lesson DM failed: ${err}`);
+      }
+    });
+  });
+
+  app.action(/^home_admin_edit_lunfardo_\d+$/, async ({ ack, body, client }) => {
+    await ack();
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      if (!isAdmin(slackUserId)) return;
+      try {
+        const actionId = (body as any).actions?.[0]?.action_id as string;
+        const itemId = actionId.replace('home_admin_edit_lunfardo_', '');
+        await client.chat.postMessage({
+          channel: slackUserId,
+          text: `:pencil2: To edit this lunfardo post, send me:\n\`edit lunfardo queue item ${itemId}\``,
+        });
+      } catch (err) {
+        homeLog.error(`Admin edit lunfardo DM failed: ${err}`);
       }
     });
   });
