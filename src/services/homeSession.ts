@@ -18,7 +18,7 @@ export interface HomeSessionState {
   userId: number;
   slackUserId: string;
   /** Current view */
-  view: 'dashboard' | 'lesson' | 'grade' | 'srs_review' | 'srs_summary' | 'curriculum' | 'exit_exam' | 'exit_exam_result' | 'admin_lesson_queue' | 'admin_lunfardo_queue' | 'admin_lesson_detail' | 'admin_lunfardo_detail';
+  view: 'dashboard' | 'lesson' | 'grade' | 'srs_review' | 'srs_summary' | 'curriculum' | 'exit_exam' | 'exit_exam_result' | 'stats' | 'admin_lesson_queue' | 'admin_lunfardo_queue' | 'admin_lesson_detail' | 'admin_lunfardo_detail';
   /** Generated lesson text (markdown) */
   lessonText: string | null;
   /** Generated exercise text (markdown) */

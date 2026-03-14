@@ -78,8 +78,6 @@ function getRoleLabel(slackUserId: string): string {
 
 function buildProfileBlocks(slackUserId: string): Record<string, unknown>[] {
   const user = getOrCreateUser(slackUserId);
-  const progress = getUserCurriculumProgress(user.id);
-  const responseLabel = user.responseMode === 'voice' ? 'Voice' : 'Text';
   const streakEmoji = user.streakDays >= 7 ? ' :fire:' : '';
   const role = getRoleLabel(slackUserId);
 
@@ -89,16 +87,11 @@ function buildProfileBlocks(slackUserId: string): Record<string, unknown>[] {
       text: { type: 'plain_text', text: 'Gringo — Your Argentine Spanish Tutor', emoji: true },
     },
     {
-      type: 'section',
-      text: {
+      type: 'context',
+      elements: [{
         type: 'mrkdwn',
-        text: [
-          `*:bust_in_silhouette: Profile*`,
-          `*Name:* ${user.displayName ?? 'Unknown'}  |  *Role:* ${role}`,
-          `*Level:* ${progress.level}/5  |  *Streak:* ${user.streakDays} day${user.streakDays !== 1 ? 's' : ''}${streakEmoji}`,
-          `*Feedback:* ${responseLabel}  |  *Timezone:* ${user.timezone}`,
-        ].join('\n'),
-      },
+        text: `:wave: *${user.displayName ?? 'Unknown'}*  |  Level ${user.level}/5  |  :fire: ${user.streakDays} day${user.streakDays !== 1 ? 's' : ''}${streakEmoji}  |  ${role}`,
+      }],
     },
   ];
 }
@@ -171,7 +164,7 @@ function buildStatsBlocks(slackUserId: string): Record<string, unknown>[] {
   return blocks;
 }
 
-function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
+function buildDashboardActions(slackUserId: string, options?: { includeStats?: boolean }): Record<string, unknown>[] {
   const user = getOrCreateUser(slackUserId);
   const cardStats = getUserCardStats(user.id);
   const current = getCurrentUnit(user.id);
@@ -188,10 +181,6 @@ function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
     ? ':arrow_forward: Continue Lesson'
     : ':arrow_right: Next Unit';
 
-  const srsLabel = cardStats.due > 0
-    ? `:recycle: Practice SRS (${cardStats.due} due)`
-    : ':recycle: Practice SRS';
-
   const buttons: Record<string, unknown>[] = [];
 
   buttons.push({
@@ -201,30 +190,32 @@ function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
     style: 'primary',
   });
 
-  buttons.push(
-    {
+  if (cardStats.due > 0) {
+    buttons.push({
       type: 'button',
-      text: { type: 'plain_text', text: srsLabel },
+      text: { type: 'plain_text', text: `:recycle: Practice SRS (${cardStats.due} due)` },
       action_id: 'home_practice_srs',
-    },
-    {
-      type: 'button',
-      text: { type: 'plain_text', text: ':books: View Curriculum' },
-      action_id: 'home_view_curriculum',
-    },
-  );
+    });
+  }
 
-  const blocks: Record<string, unknown>[] = [
+  buttons.push({
+    type: 'button',
+    text: { type: 'plain_text', text: ':books: View Curriculum' },
+    action_id: 'home_view_curriculum',
+  });
+
+  if (options?.includeStats) {
+    buttons.push({
+      type: 'button',
+      text: { type: 'plain_text', text: ':bar_chart: Stats & Profile' },
+      action_id: 'home_view_stats',
+    });
+  }
+
+  return [
     { type: 'divider' },
     { type: 'actions', elements: buttons },
   ];
-
-  blocks.push({
-    type: 'context',
-    elements: [{ type: 'mrkdwn', text: '_This dashboard updates each time you open the app._' }],
-  });
-
-  return blocks;
 }
 
 // ── View: Dashboard ─────────────────────────────────────────
@@ -232,10 +223,14 @@ function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
 function buildDashboardView(slackUserId: string): Record<string, unknown>[] {
   const user = getOrCreateUser(slackUserId);
   const state = getHomeSession(user.id);
-  const blocks = [
+  const progress = getUserCurriculumProgress(user.id);
+  const current = getCurrentUnit(user.id);
+  const totalUnits = getCurriculumCount();
+  const pct = totalUnits > 0 ? Math.round((progress.completedCount / totalUnits) * 100) : 0;
+  const bar = buildProgressBar(progress.completedCount, totalUnits);
+
+  const blocks: Record<string, unknown>[] = [
     ...buildProfileBlocks(slackUserId),
-    ...buildProgressBlocks(slackUserId),
-    ...buildStatsBlocks(slackUserId),
   ];
 
   // Show inline notification if present (e.g. "no SRS cards due")
@@ -249,8 +244,61 @@ function buildDashboardView(slackUserId: string): Record<string, unknown>[] {
     setHomeSession(state);
   }
 
-  blocks.push(...buildDashboardActions(slackUserId));
+  // Current unit callout
+  const unitLine = current
+    ? `*:arrow_forward: Unit ${current.unit.unitOrder} — ${current.unit.title}*`
+    : progress.completedCount === totalUnits && totalUnits > 0
+      ? ':tada: *All units completed!*'
+      : '_No active unit — click Next Unit to start_';
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `${unitLine}\n${bar}  ${progress.completedCount}/${totalUnits} units (${pct}%)`,
+    },
+  });
+
+  blocks.push(...buildDashboardActions(slackUserId, { includeStats: true }));
   blocks.push(...buildAdminQueueSection(slackUserId));
+  return blocks;
+}
+
+// ── View: Stats & Profile ────────────────────────────────────
+
+function buildStatsView(slackUserId: string): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [
+    ...buildProfileBlocks(slackUserId),
+    ...buildStatsBlocks(slackUserId),
+  ];
+
+  const user = getOrCreateUser(slackUserId);
+  const responseLabel = user.responseMode === 'voice' ? 'Voice' : 'Text';
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: [
+        '*:gear: Settings*',
+        `*Feedback mode:* ${responseLabel}  |  *Timezone:* ${user.timezone}`,
+      ].join('\n'),
+    },
+  });
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'actions',
+    elements: [{
+      type: 'button',
+      text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Dashboard', emoji: true },
+      action_id: 'home_back_dashboard',
+      style: 'primary',
+    }],
+  });
+
   return blocks;
 }
 
@@ -266,58 +314,30 @@ function buildAdminQueueSection(slackUserId: string): Record<string, unknown>[] 
   if (!hasElevatedAccess(slackUserId)) return [];
 
   const stats = getQueueStats();
-  const lessons = getLessonQueueItems({ status: 'ready', limit: 3 });
-  const lunfardo = getLunfardoQueueItems({ status: 'ready', limit: 3 });
+
+  const lessonInfo = `Lessons: ${stats.lessons.ready} ready${stats.lessons.nextDate ? ` (next ${formatShortDate(stats.lessons.nextDate)})` : ''}`;
+  const lunfardoInfo = `Lunfardo: ${stats.lunfardo.ready} ready${stats.lunfardo.nextDate ? ` (next ${formatShortDate(stats.lunfardo.nextDate)})` : ''}`;
 
   const blocks: Record<string, unknown>[] = [
     { type: 'divider' },
-    { type: 'header', text: { type: 'plain_text', text: ':clipboard: Content Queues', emoji: true } },
     {
       type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: `*Daily Lessons*\nReady: ${stats.lessons.ready}\nNext: ${stats.lessons.nextDate ? formatShortDate(stats.lessons.nextDate) : 'none'}` },
-        { type: 'mrkdwn', text: `*Lunfardo del Día*\nReady: ${stats.lunfardo.ready}\nNext: ${stats.lunfardo.nextDate ? formatShortDate(stats.lunfardo.nextDate) : 'none'}` },
-      ],
+      text: { type: 'mrkdwn', text: `:clipboard: *Content Queues*\n${lessonInfo}  |  ${lunfardoInfo}` },
     },
   ];
 
-  // Upcoming lessons preview
-  if (lessons.length > 0) {
-    const lines = lessons.map(item => `• ${formatShortDate(item.scheduledDate)} — ${item.title ?? 'Untitled'}`);
-    if (stats.lessons.ready > 3) lines.push(`  _+ ${stats.lessons.ready - 3} more..._`);
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Upcoming Lessons*\n${lines.join('\n')}` } });
-  } else {
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '_Lesson queue is empty — use the chat agent to generate lessons._' } });
-  }
-
-  // Upcoming lunfardo preview
-  if (lunfardo.length > 0) {
-    const lines = lunfardo.map(item => `• ${formatShortDate(item.scheduledDate)} — ${item.word ?? 'Unknown'}`);
-    if (stats.lunfardo.ready > 3) lines.push(`  _+ ${stats.lunfardo.ready - 3} more..._`);
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Upcoming Lunfardo*\n${lines.join('\n')}` } });
-  } else {
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '_Lunfardo queue is empty — use the chat agent to generate posts._' } });
-  }
-
-  // Action buttons (only if items exist)
   const queueButtons: Record<string, unknown>[] = [];
-  if (stats.lessons.ready > 0) {
-    queueButtons.push({
-      type: 'button',
-      text: { type: 'plain_text', text: `View All Lessons (${stats.lessons.ready})` },
-      action_id: 'home_admin_lesson_queue',
-    });
-  }
-  if (stats.lunfardo.ready > 0) {
-    queueButtons.push({
-      type: 'button',
-      text: { type: 'plain_text', text: `View All Lunfardo (${stats.lunfardo.ready})` },
-      action_id: 'home_admin_lunfardo_queue',
-    });
-  }
-  if (queueButtons.length > 0) {
-    blocks.push({ type: 'actions', elements: queueButtons });
-  }
+  queueButtons.push({
+    type: 'button',
+    text: { type: 'plain_text', text: `View Lessons (${stats.lessons.ready})` },
+    action_id: 'home_admin_lesson_queue',
+  });
+  queueButtons.push({
+    type: 'button',
+    text: { type: 'plain_text', text: `View Lunfardo (${stats.lunfardo.ready})` },
+    action_id: 'home_admin_lunfardo_queue',
+  });
+  blocks.push({ type: 'actions', elements: queueButtons });
 
   return blocks;
 }
@@ -610,12 +630,11 @@ function structuredLessonToBlocks(lessonText: string): Record<string, unknown>[]
 // ── View: Lesson + Exercise ─────────────────────────────────
 
 function buildLessonView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
-  const blocks: Record<string, unknown>[] = [...buildProfileBlocks(slackUserId)];
+  const blocks: Record<string, unknown>[] = [];
   const unit = state.unit;
   const totalUnits = getCurriculumCount();
 
   if (unit && state.lessonText) {
-    blocks.push({ type: 'divider' });
     blocks.push({
       type: 'header',
       text: { type: 'plain_text', text: `Unit ${unit.unitOrder} of ${totalUnits}: ${unit.title}`, emoji: true },
@@ -639,8 +658,8 @@ function buildLessonView(slackUserId: string, state: HomeSessionState): Record<s
     const attempts = current?.progress.attempts ?? 0;
     const threshold = unit?.passThreshold ?? 3;
     const attemptLine = attempts > 0
-      ? `Attempts: ${attempts}  |  Need: ${threshold}/5 to pass`
-      : `Need: ${threshold}/5 to pass`;
+      ? `Attempt ${attempts}  |  Need ${threshold}/5 to pass`
+      : `Need ${threshold}/5 to pass`;
 
     blocks.push({
       type: 'context',
@@ -666,25 +685,20 @@ function buildLessonView(slackUserId: string, state: HomeSessionState): Record<s
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: ':loud_sound: Listen to Phrases' },
+          text: { type: 'plain_text', text: ':loud_sound: Listen' },
           action_id: 'home_listen_phrases',
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: ':microphone: Send voice memo in DMs' },
-          action_id: 'home_voice_hint',
-        },
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: ':books: Back to Curriculum' },
-          action_id: 'home_view_curriculum',
-        },
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Dashboard' },
+          text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back' },
           action_id: 'home_back_dashboard',
         },
       ],
+    });
+
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: ':microphone: _You can also send a voice memo in DMs to answer_' }],
     });
   }
 
@@ -725,7 +739,7 @@ function extractSpanishPhrases(lessonText: string): string[] {
 // ── View: Grade Feedback ────────────────────────────────────
 
 function buildGradeView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
-  const blocks: Record<string, unknown>[] = [...buildProfileBlocks(slackUserId)];
+  const blocks: Record<string, unknown>[] = [];
   const grade = state.lastGradeResult;
   const unit = state.unit;
 
@@ -733,90 +747,100 @@ function buildGradeView(slackUserId: string, state: HomeSessionState): Record<st
 
   if (grade.passed) {
     // ── Pass view ──
-    blocks.push({ type: 'divider' });
     blocks.push({
       type: 'header',
       text: { type: 'plain_text', text: `:white_check_mark: Unit ${unit.unitOrder}: ${unit.title} — Passed!`, emoji: true },
     });
     blocks.push({
       type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `:tada: *Score: ${grade.score}/5*\n\n${grade.feedback}`,
-      },
+      text: { type: 'mrkdwn', text: `*Score: ${grade.score}/5*\n\n${grade.feedback}` },
     });
 
+    // Combine tips, correction, and pronunciation into a single section
+    const extras: string[] = [];
     if (grade.errors.length > 0) {
-      const errorLines = grade.errors.map((err) => `• ${err}`).join('\n');
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: `*Notes for next time:*\n${errorLines}` },
-      });
+      extras.push(`*:bulb: Tip:* ${grade.errors.join('; ')}`);
     }
-
     if (grade.correction) {
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: `*Model answer:* _${grade.correction}_` },
-      });
+      extras.push(`*Model answer:* _${grade.correction}_`);
     }
-
     if (grade.pronunciationNotes) {
+      extras.push(`:studio_microphone: *Pronunciation:* ${grade.pronunciationNotes}`);
+    }
+    if (extras.length > 0) {
       blocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: `:studio_microphone: *Pronunciation:* ${grade.pronunciationNotes}` },
+        text: { type: 'mrkdwn', text: extras.join('\n\n') },
       });
     }
 
     blocks.push({ type: 'divider' });
     blocks.push(...buildProgressBlocks(slackUserId));
-    blocks.push(...buildDashboardActions(slackUserId));
-  } else {
-    // ── Fail view ──
-    // Show the exercise text so the user remembers the question
-    if (state.exerciseText) {
-      blocks.push({ type: 'divider' });
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: `*:pencil2: Exercise*\n\n${state.exerciseText}` },
-      });
-    }
-
-    blocks.push({ type: 'divider' });
-
-    const lines = [
-      `:x: *Score: ${grade.score}/5* — need ${unit.passThreshold} to pass`,
-      '',
-      grade.feedback,
-    ];
-
-    if (grade.errors.length > 0) {
-      lines.push('', '*Errors to work on:*');
-      for (const err of grade.errors) {
-        lines.push(`• ${err}`);
-      }
-    }
-
-    if (grade.correction) {
-      lines.push('', `*Correct answer:* _${grade.correction}_`);
-    }
-
-    if (grade.pronunciationNotes) {
-      lines.push('', `:studio_microphone: *Pronunciation:* ${grade.pronunciationNotes}`);
-    }
 
     blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: lines.join('\n') },
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: ':arrow_right: Next Unit' },
+          action_id: 'home_next_unit',
+          style: 'primary',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Dashboard', emoji: true },
+          action_id: 'home_back_dashboard',
+        },
+      ],
+    });
+  } else {
+    // ── Fail view ──
+    blocks.push({
+      type: 'header',
+      text: { type: 'plain_text', text: `:x: Unit ${unit.unitOrder}: ${unit.title} — ${grade.score}/5`, emoji: true },
     });
 
     const user = getOrCreateUser(slackUserId);
     const current = getCurrentUnit(user.id);
     const attempts = current?.progress.attempts ?? 0;
+
     blocks.push({
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: `Attempts: ${attempts}  |  Need: ${unit.passThreshold}/5 to pass` }],
+      elements: [{ type: 'mrkdwn', text: `Need ${unit.passThreshold} to pass  |  Attempt ${attempts}` }],
     });
+
+    // Errors first (what matters most)
+    if (grade.errors.length > 0) {
+      const errorLines = grade.errors.map((err) => `• ${err}`).join('\n');
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Errors:*\n${errorLines}` },
+      });
+    }
+
+    // Correct answer
+    if (grade.correction) {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Correct:* _${grade.correction}_` },
+      });
+    }
+
+    if (grade.pronunciationNotes) {
+      blocks.push({
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: `:studio_microphone: ${grade.pronunciationNotes}` }],
+      });
+    }
+
+    // Exercise text for reference
+    if (state.exerciseText) {
+      blocks.push({ type: 'divider' });
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*:pencil2: Exercise*\n${state.exerciseText}` },
+      });
+    }
 
     blocks.push({
       type: 'actions',
@@ -829,25 +853,20 @@ function buildGradeView(slackUserId: string, state: HomeSessionState): Record<st
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: ':loud_sound: Listen to Phrases' },
+          text: { type: 'plain_text', text: ':loud_sound: Listen' },
           action_id: 'home_listen_phrases',
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: ':microphone: Send voice memo in DMs' },
-          action_id: 'home_voice_hint',
-        },
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: ':books: Back to Curriculum' },
-          action_id: 'home_view_curriculum',
-        },
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back to Dashboard' },
+          text: { type: 'plain_text', text: ':leftwards_arrow_with_hook: Back' },
           action_id: 'home_back_dashboard',
         },
       ],
+    });
+
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: ':microphone: _You can also send a voice memo in DMs to answer_' }],
     });
   }
 
@@ -1050,7 +1069,7 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
   const blocks: Record<string, unknown>[] = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: 'Curriculum', emoji: true },
+      text: { type: 'plain_text', text: ':books: Curriculum', emoji: true },
     },
     {
       type: 'context',
@@ -1060,7 +1079,7 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
   ];
 
   // Higher levels are gated until the exit exam for the previous level is passed
-  let gatedAboveLevel = 999; // units above this level are locked
+  let gatedAboveLevel = 999;
   for (let lvl = 1; lvl <= 4; lvl++) {
     if (!hasPassedExitExam(user.id, lvl)) {
       gatedAboveLevel = lvl;
@@ -1069,89 +1088,101 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
   }
 
   // Group units by level band
-  let currentBand = 0;
-  // Batch clickable units into action blocks (max 5 buttons per actions block)
-  let actionButtons: Record<string, unknown>[] = [];
-
-  const flushButtons = () => {
-    if (actionButtons.length > 0) {
-      blocks.push({ type: 'actions', elements: actionButtons });
-      actionButtons = [];
-    }
-  };
-
+  const levelBands = new Map<number, typeof units>();
   for (const unit of units) {
-    if (unit.levelBand !== currentBand) {
-      flushButtons();
+    const band = unit.levelBand;
+    if (!levelBands.has(band)) levelBands.set(band, []);
+    levelBands.get(band)!.push(unit);
+  }
 
-      // Show exit exam row between levels (always visible in one of 3 states)
-      if (currentBand > 0 && currentBand <= 4) {
-        appendExamRow(blocks, units, unitStatus, user.id, currentBand, gatedAboveLevel);
-        blocks.push({ type: 'divider' });
-      }
+  const sortedBands = [...levelBands.keys()].sort((a, b) => a - b);
 
-      currentBand = unit.levelBand;
+  for (const band of sortedBands) {
+    const bandUnits = levelBands.get(band)!;
+    const examPassed = hasPassedExitExam(user.id, band);
+
+    // Check if all units in this band are passed
+    const allPassed = bandUnits.every(u => unitStatus.get(u.id)?.status === 'passed');
+    const isCollapsed = allPassed && examPassed;
+
+    if (isCollapsed) {
+      // Collapsed completed level — single summary line
       blocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: `*Level ${currentBand}*` },
+        text: { type: 'mrkdwn', text: `*Level ${band}*  :white_check_mark: _${bandUnits.length} units completed — exam passed_` },
       });
-    }
-
-    const prog = unitStatus.get(unit.id);
-    const status = prog?.status ?? 'locked';
-    const userIsElevated = hasElevatedAccess(slackUserId);
-    // Units in levels above a gated exam are locked (unless admin/tutor)
-    const gatedByExam = !userIsElevated && unit.levelBand > gatedAboveLevel;
-    const isClickable = !gatedByExam && (userIsElevated || status === 'passed' || status === 'practicing' || status === 'active' || status === 'skipped');
-
-    let icon: string;
-    let suffix = '';
-    switch (status) {
-      case 'passed':
-        icon = ':white_check_mark:';
-        suffix = prog?.bestScore != null ? ` (${prog.bestScore}/5)` : '';
-        break;
-      case 'practicing':
-        icon = ':arrow_forward:';
-        suffix = ' in progress';
-        break;
-      case 'active':
-        icon = ':radio_button:';
-        suffix = ' ready';
-        break;
-      case 'skipped':
-        icon = ':fast_forward:';
-        suffix = ' skipped';
-        break;
-      default:
-        icon = ':lock:';
-        break;
-    }
-
-    if (isClickable) {
-      actionButtons.push({
-        type: 'button',
-        text: { type: 'plain_text', text: `${icon} ${unit.unitOrder}. ${unit.title}${suffix}` },
-        action_id: `home_goto_unit_${unit.id}`,
-        ...(status === 'practicing' || status === 'active' ? { style: 'primary' } : {}),
-      });
-      // Slack allows max 5 buttons per actions block
-      if (actionButtons.length >= 5) {
-        flushButtons();
-      }
+      blocks.push({ type: 'divider' });
     } else {
-      flushButtons();
+      // Expanded level — show individual units
       blocks.push({
-        type: 'context',
-        elements: [{ type: 'mrkdwn', text: `${icon}  ${unit.unitOrder}. ${unit.title}` }],
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Level ${band}*` },
       });
-    }
-  }
-  flushButtons();
 
-  // Show exit exam for the last level band
-  if (currentBand > 0 && currentBand <= 4) {
-    appendExamRow(blocks, units, unitStatus, user.id, currentBand, gatedAboveLevel);
+      let actionButtons: Record<string, unknown>[] = [];
+      const flushButtons = () => {
+        if (actionButtons.length > 0) {
+          blocks.push({ type: 'actions', elements: actionButtons });
+          actionButtons = [];
+        }
+      };
+
+      const userIsElevated = hasElevatedAccess(slackUserId);
+
+      for (const unit of bandUnits) {
+        const prog = unitStatus.get(unit.id);
+        const status = prog?.status ?? 'locked';
+        const gatedByExam = !userIsElevated && unit.levelBand > gatedAboveLevel;
+        const isClickable = !gatedByExam && (userIsElevated || status === 'passed' || status === 'practicing' || status === 'active' || status === 'skipped');
+
+        let icon: string;
+        let suffix = '';
+        switch (status) {
+          case 'passed':
+            icon = ':white_check_mark:';
+            suffix = prog?.bestScore != null ? ` (${prog.bestScore}/5)` : '';
+            break;
+          case 'practicing':
+            icon = ':arrow_forward:';
+            suffix = ' in progress';
+            break;
+          case 'active':
+            icon = ':radio_button:';
+            suffix = ' ready';
+            break;
+          case 'skipped':
+            icon = ':fast_forward:';
+            suffix = ' skipped';
+            break;
+          default:
+            icon = ':lock:';
+            break;
+        }
+
+        if (isClickable) {
+          actionButtons.push({
+            type: 'button',
+            text: { type: 'plain_text', text: `${icon} ${unit.unitOrder}. ${unit.title}${suffix}` },
+            action_id: `home_goto_unit_${unit.id}`,
+            ...(status === 'practicing' || status === 'active' ? { style: 'primary' } : {}),
+          });
+          if (actionButtons.length >= 5) flushButtons();
+        } else {
+          flushButtons();
+          blocks.push({
+            type: 'context',
+            elements: [{ type: 'mrkdwn', text: `${icon}  ${unit.unitOrder}. ${unit.title}` }],
+          });
+        }
+      }
+      flushButtons();
+
+      // Show exit exam row
+      if (band <= 4) {
+        appendExamRow(blocks, units, unitStatus, user.id, band, gatedAboveLevel);
+      }
+      blocks.push({ type: 'divider' });
+    }
   }
 
   // Slack Home tab has a 100-block limit — truncate if needed
@@ -1163,7 +1194,6 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
     });
   }
 
-  blocks.push({ type: 'divider' });
   blocks.push({
     type: 'actions',
     elements: [
@@ -1182,11 +1212,10 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
 // ── View: Exit Exam ──────────────────────────────────────────
 
 function buildExitExamView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
-  const blocks: Record<string, unknown>[] = [...buildProfileBlocks(slackUserId)];
+  const blocks: Record<string, unknown>[] = [];
   const examState = getActiveExam(slackUserId);
 
   if (!examState) {
-    // No active exam — go back to dashboard
     return buildDashboardView(slackUserId);
   }
 
@@ -1194,7 +1223,6 @@ function buildExitExamView(slackUserId: string, state: HomeSessionState): Record
   const total = examState.questions.length;
   const idx = examState.currentIndex;
 
-  blocks.push({ type: 'divider' });
   blocks.push({
     type: 'header',
     text: { type: 'plain_text', text: `:pencil: Level ${levelBand} Exit Exam`, emoji: true },
@@ -1283,11 +1311,9 @@ function buildExitExamView(slackUserId: string, state: HomeSessionState): Record
 }
 
 function buildExitExamResultView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
-  const blocks: Record<string, unknown>[] = [...buildProfileBlocks(slackUserId)];
+  const blocks: Record<string, unknown>[] = [];
   const examState = getActiveExam(slackUserId);
   const levelBand = state.exitExamLevel ?? 0;
-
-  blocks.push({ type: 'divider' });
 
   if (examState?.passed) {
     blocks.push({
@@ -1417,6 +1443,8 @@ export function buildHomeBlocks(slackUserId: string): Record<string, unknown>[] 
       return buildSrsSummaryView(slackUserId, state);
     case 'curriculum':
       return buildCurriculumView(slackUserId);
+    case 'stats':
+      return buildStatsView(slackUserId);
     case 'exit_exam':
       return buildExitExamView(slackUserId, state);
     case 'exit_exam_result':
@@ -1773,6 +1801,20 @@ export function registerHomeHandler(app: App): void {
       const user = getOrCreateUser(slackUserId);
       const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
       state.view = 'curriculum';
+      setHomeSession(state);
+      await publishHomeTab(client, slackUserId);
+    });
+  });
+
+  // ── View Stats & Profile ───────────────────────────────
+  app.action('home_view_stats', async ({ ack, body, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      const user = getOrCreateUser(slackUserId);
+      const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+      state.view = 'stats';
       setHomeSession(state);
       await publishHomeTab(client, slackUserId);
     });
