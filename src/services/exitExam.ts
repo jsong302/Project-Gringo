@@ -434,16 +434,5 @@ export function getPendingExitExam(userId: number, currentLevelBand: number): nu
   // Check if they've already passed
   if (hasPassedExitExam(userId, currentLevelBand)) return null;
 
-  // Check if ALL units in this level are passed
-  const db = getDb();
-  const result = db.exec(
-    `SELECT COUNT(*) FROM user_curriculum_progress ucp
-     JOIN curriculum_units cu ON ucp.unit_id = cu.id
-     WHERE ucp.user_id = ${userId} AND cu.level_band = ${currentLevelBand}
-       AND cu.status = 'active' AND ucp.status != 'passed' AND ucp.status != 'skipped'`,
-  );
-  const unfinished = result.length ? (result[0].values[0][0] as number) : 0;
-  if (unfinished > 0) return null; // Still has units to complete in this level
-
   return currentLevelBand;
 }

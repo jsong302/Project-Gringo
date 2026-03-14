@@ -179,8 +179,14 @@ function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
 
   const buttons: Record<string, unknown>[] = [];
 
+  buttons.push({
+    type: 'button',
+    text: { type: 'plain_text', text: nextLabel },
+    action_id: 'home_next_unit',
+    style: 'primary',
+  });
+
   if (pendingExam !== null) {
-    // Exit exam needed — show exam button as primary, hide Next Unit
     const attempts = getExamAttemptCount(user.id, pendingExam);
     const examLabel = attempts > 0
       ? `:pencil: Retake Level ${pendingExam} Exit Exam`
@@ -190,14 +196,6 @@ function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
       text: { type: 'plain_text', text: examLabel, emoji: true },
       action_id: 'home_start_exit_exam',
       value: String(pendingExam),
-      style: 'primary',
-    });
-  } else {
-    buttons.push({
-      type: 'button',
-      text: { type: 'plain_text', text: nextLabel },
-      action_id: 'home_next_unit',
-      style: 'primary',
     });
   }
 
@@ -723,25 +721,23 @@ function appendExamRow(
   userId: number,
   levelBand: number,
 ): void {
-  const levelUnits = units.filter(u => u.levelBand === levelBand);
-  const allPassed = levelUnits.every(u => {
-    const s = unitStatus.get(u.id)?.status;
-    return s === 'passed' || s === 'skipped';
-  });
-
-  if (allPassed && hasPassedExitExam(userId, levelBand)) {
+  if (hasPassedExitExam(userId, levelBand)) {
     blocks.push({
       type: 'context',
       elements: [{ type: 'mrkdwn', text: `:white_check_mark: _Level ${levelBand} Exit Exam — passed_` }],
     });
-  } else if (allPassed) {
+  } else {
     const count = getQuestionCountForLevel(levelBand);
     if (count >= 5) {
+      const attempts = getExamAttemptCount(userId, levelBand);
+      const label = attempts > 0
+        ? `:pencil: Retake Level ${levelBand} Exit Exam`
+        : `:pencil: Take Level ${levelBand} Exit Exam`;
       blocks.push({
         type: 'actions',
         elements: [{
           type: 'button',
-          text: { type: 'plain_text', text: `:pencil: Take Level ${levelBand} Exit Exam`, emoji: true },
+          text: { type: 'plain_text', text: label, emoji: true },
           action_id: 'home_start_exit_exam',
           value: String(levelBand),
           style: 'primary',
@@ -753,15 +749,6 @@ function appendExamRow(
         elements: [{ type: 'mrkdwn', text: `:lock: _Level ${levelBand} Exit Exam — no questions generated yet_` }],
       });
     }
-  } else {
-    const remaining = levelUnits.filter(u => {
-      const s = unitStatus.get(u.id)?.status;
-      return s !== 'passed' && s !== 'skipped';
-    }).length;
-    blocks.push({
-      type: 'context',
-      elements: [{ type: 'mrkdwn', text: `:lock: _Level ${levelBand} Exit Exam — ${remaining} unit${remaining !== 1 ? 's' : ''} remaining_` }],
-    });
   }
 }
 
@@ -799,16 +786,10 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
     { type: 'divider' },
   ];
 
-  // Determine which levels are locked behind unpassed exit exams
-  // If level N has all units passed but no exam passed, levels > N are gated
+  // Higher levels are gated until the exit exam for the previous level is passed
   let gatedAboveLevel = 999; // units above this level are locked
   for (let lvl = 1; lvl <= 4; lvl++) {
-    const lvlUnits = units.filter(u => u.levelBand === lvl);
-    const allDone = lvlUnits.every(u => {
-      const s = unitStatus.get(u.id)?.status;
-      return s === 'passed' || s === 'skipped';
-    });
-    if (allDone && !hasPassedExitExam(user.id, lvl)) {
+    if (!hasPassedExitExam(user.id, lvl)) {
       gatedAboveLevel = lvl;
       break;
     }
