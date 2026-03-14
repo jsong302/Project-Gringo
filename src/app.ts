@@ -20,6 +20,7 @@ import { closeStaleConversations } from './services/conversationTracker';
 import { log } from './utils/logger';
 import { seedCurriculumIfEmpty } from './services/curriculum';
 import { migrateExistingUsers } from './services/curriculumMigration';
+import { ensureAuditTable } from './services/auditLog';
 
 const bootLog = log.withScope('boot');
 
@@ -51,7 +52,10 @@ const bootLog = log.withScope('boot');
   seedDefaultPrompts();
   seedAllContent();
 
-  // 4b. Seed shared curriculum and migrate existing users
+  // 4b. Ensure audit log table exists
+  ensureAuditTable();
+
+  // 4c. Seed shared curriculum and migrate existing users
   seedCurriculumIfEmpty();
   migrateExistingUsers();
 

@@ -22,8 +22,13 @@ import { updateStreak } from './userService';
 import type { ToolDefinition } from './llm';
 import { getCurriculum, getUnit, updateUnit, reorderUnit, addUnit, archiveUnit, removeUnit } from './curriculum';
 import { getAllUsersProgress, placeUserAtUnit } from './curriculumDelivery';
+import { logAuditEntry, getAuditLog } from './auditLog';
 
 const toolLog = log.withScope('admin-tools');
+
+// Current admin context for audit logging (set during executeTool)
+let _currentAdminSlackId: string | null = null;
+function auditAdmin(): string { return _currentAdminSlackId ?? 'unknown'; }
 
 // ── Tool registry ───────────────────────────────────────────
 
@@ -35,17 +40,20 @@ function register(name: string, handler: ToolHandler): void {
   handlers.set(name, handler);
 }
 
-export async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
+export async function executeTool(name: string, input: Record<string, unknown>, adminSlackId?: string): Promise<string> {
   const handler = handlers.get(name);
   if (!handler) {
     return JSON.stringify({ error: `Unknown tool: ${name}` });
   }
   try {
     toolLog.info(`Executing tool: ${name}`, { input });
+    _currentAdminSlackId = adminSlackId ?? null;
     const result = await handler(input);
+    _currentAdminSlackId = null;
     toolLog.debug(`Tool result: ${name}`, { result: result.slice(0, 200) });
     return result;
   } catch (err) {
+    _currentAdminSlackId = null;
     const msg = err instanceof Error ? err.message : String(err);
     toolLog.error(`Tool error: ${name} — ${msg}`);
     return JSON.stringify({ error: msg });
@@ -350,6 +358,20 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
     description: 'View which units have generated lessons in the bank and which are missing.',
     input_schema: { type: 'object', properties: {}, required: [] },
   },
+  // Audit log
+  {
+    name: 'view_audit_log',
+    description: 'View the admin audit log — shows recent admin actions with before/after snapshots. Filter by tool name, target type, or admin.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max entries to return (default 20)' },
+        tool_name: { type: 'string', description: 'Filter by tool name (e.g. "edit_curriculum_unit")' },
+        target_type: { type: 'string', description: 'Filter by target type (e.g. "unit", "setting", "prompt", "user", "admin")' },
+      },
+      required: [],
+    },
+  },
 ];
 
 // ── Tool implementations ────────────────────────────────────
@@ -372,7 +394,9 @@ register('update_setting', (input) => {
   const key = input.key as string;
   const value = input.value;
   const reason = (input.reason as string) ?? 'Updated by admin agent';
+  const before = listSettings().find((s) => s.key === key);
   setSetting(key, value, undefined, `admin-agent: ${reason}`);
+  logAuditEntry(auditAdmin(), 'update_setting', 'setting', key, before ?? null, { key, value }, input);
   return JSON.stringify({ success: true, key, value });
 });
 
@@ -444,7 +468,9 @@ register('update_user_level', (input) => {
   const user = getUserById(userId);
   if (!user) return JSON.stringify({ error: `User not found: ${userId}` });
 
+  const before = { userId, level: user.level };
   updateLevel(userId, level);
+  logAuditEntry(auditAdmin(), 'update_user_level', 'user', userId, before, { userId, level }, input);
   return JSON.stringify({ success: true, userId, previousLevel: user.level, newLevel: level });
 });
 
@@ -571,7 +597,9 @@ register('update_prompt', (input) => {
   const name = input.name as string;
   const promptText = input.prompt_text as string;
   const description = input.description as string | undefined;
+  const beforeText = getPrompt(name);
   upsertPrompt(name, promptText, description, 'admin-agent');
+  logAuditEntry(auditAdmin(), 'update_prompt', 'prompt', name, { name, promptText: beforeText }, { name, promptText }, input);
   return JSON.stringify({ success: true, name, textLength: promptText.length });
 });
 
@@ -591,6 +619,7 @@ register('manage_admins', (input) => {
       if (current.includes(slackUserId)) return JSON.stringify({ error: `${slackUserId} is already an admin` });
       const updated = [...current, slackUserId];
       setSetting('admin.user_ids', updated, undefined, 'admin-agent');
+      logAuditEntry(auditAdmin(), 'manage_admins', 'admin', slackUserId, { admins: current }, { admins: updated }, input);
       return JSON.stringify({ success: true, action: 'added', slackUserId, admins: updated });
     }
 
@@ -600,6 +629,7 @@ register('manage_admins', (input) => {
       if (current.length <= 1) return JSON.stringify({ error: 'Cannot remove the last admin' });
       const updated = current.filter((id) => id !== slackUserId);
       setSetting('admin.user_ids', updated, undefined, 'admin-agent');
+      logAuditEntry(auditAdmin(), 'manage_admins', 'admin', slackUserId, { admins: current }, { admins: updated }, input);
       return JSON.stringify({ success: true, action: 'removed', slackUserId, admins: updated });
     }
 
@@ -671,6 +701,7 @@ register('edit_curriculum_unit', (input) => {
   const unit = getUnit(unitId);
   if (!unit) return JSON.stringify({ error: `Unit not found: ${unitId}` });
 
+  const before = { ...unit };
   const fields: Record<string, unknown> = {};
   if (input.title) fields.title = input.title;
   if (input.description) fields.description = input.description;
@@ -680,13 +711,17 @@ register('edit_curriculum_unit', (input) => {
   if (input.level_band != null) fields.levelBand = input.level_band;
 
   updateUnit(unitId, fields);
+  const after = getUnit(unitId);
+  logAuditEntry(auditAdmin(), 'edit_curriculum_unit', 'unit', unitId, before, after, input);
   return JSON.stringify({ success: true, unitId, updated: Object.keys(fields) });
 });
 
 register('reorder_curriculum_unit', (input) => {
   const unitId = input.unit_id as number;
   const newOrder = input.new_order as number;
+  const before = getUnit(unitId);
   reorderUnit(unitId, newOrder);
+  logAuditEntry(auditAdmin(), 'reorder_curriculum_unit', 'unit', unitId, { unitOrder: before?.unitOrder }, { unitOrder: newOrder }, input);
   return JSON.stringify({ success: true, unitId, newOrder });
 });
 
@@ -701,12 +736,16 @@ register('add_curriculum_unit', (input) => {
     exercisePrompt: (input.exercise_prompt as string) ?? undefined,
   };
   const newId = addUnit(afterOrder, data);
+  const after = getUnit(newId);
+  logAuditEntry(auditAdmin(), 'add_curriculum_unit', 'unit', newId, null, after, input);
   return JSON.stringify({ success: true, newUnitId: newId, insertedAfterOrder: afterOrder });
 });
 
 register('archive_curriculum_unit', (input) => {
   const unitId = input.unit_id as number;
+  const before = getUnit(unitId);
   archiveUnit(unitId);
+  logAuditEntry(auditAdmin(), 'archive_curriculum_unit', 'unit', unitId, before, { ...before, status: 'archived' }, input);
   return JSON.stringify({ success: true, unitId, status: 'archived' });
 });
 
@@ -714,9 +753,10 @@ register('remove_curriculum_unit', (input) => {
   const unitId = input.unit_id as number;
   const unit = getUnit(unitId);
   if (!unit) return JSON.stringify({ error: `Unit ${unitId} not found` });
-  const title = unit.title;
+  const before = { ...unit };
   removeUnit(unitId);
-  return JSON.stringify({ success: true, unitId, title, status: 'permanently_deleted' });
+  logAuditEntry(auditAdmin(), 'remove_curriculum_unit', 'unit', unitId, before, null, input);
+  return JSON.stringify({ success: true, unitId, title: before.title, status: 'permanently_deleted' });
 });
 
 register('place_user_at_unit', (input) => {
@@ -725,7 +765,9 @@ register('place_user_at_unit', (input) => {
   const user = getUserById(userId);
   if (!user) return JSON.stringify({ error: `User not found: ${userId}` });
 
+  const before = { userId, level: user.level };
   placeUserAtUnit(userId, unitOrder);
+  logAuditEntry(auditAdmin(), 'place_user_at_unit', 'user', userId, before, { userId, placedAtUnit: unitOrder }, input);
   return JSON.stringify({ success: true, userId, placedAtUnit: unitOrder });
 });
 
@@ -871,8 +913,32 @@ register('generate_lesson_bank', () => {
 
 register('regenerate_lesson', async (input) => {
   const unitId = input.unit_id as number;
-  const { generateAndBankLesson } = await import('./curriculumDelivery');
+  const { generateAndBankLesson, getLessonFromBank } = await import('./curriculumDelivery');
+  const beforeText = getLessonFromBank(unitId);
   const lessonText = await generateAndBankLesson(unitId);
+  logAuditEntry(auditAdmin(), 'regenerate_lesson', 'lesson', unitId, { unitId, hadLesson: !!beforeText }, { unitId, lessonLength: lessonText.length }, input);
   return JSON.stringify({ success: true, unitId, lessonLength: lessonText.length });
+});
+
+// Audit log
+register('view_audit_log', (input) => {
+  const entries = getAuditLog({
+    limit: (input.limit as number) ?? 20,
+    toolName: input.tool_name as string | undefined,
+    targetType: input.target_type as string | undefined,
+  });
+  return JSON.stringify({
+    count: entries.length,
+    entries: entries.map((e) => ({
+      id: e.id,
+      admin: e.adminSlackId,
+      tool: e.toolName,
+      targetType: e.targetType,
+      targetId: e.targetId,
+      before: e.beforeSnapshot,
+      after: e.afterSnapshot,
+      timestamp: e.timestamp,
+    })),
+  }, null, 2);
 });
 

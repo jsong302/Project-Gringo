@@ -112,6 +112,7 @@ export async function handleAdmin(
       '- `change <setting> to <value>` — update a setting',
       '- `add/remove <user> as admin` — manage admins',
       '- `show error patterns` — recent learning/system errors',
+      '- `show audit log` — view recent admin actions with before/after snapshots',
       '',
       '*Prompts*',
       '- `show prompts` — list all LLM prompts',

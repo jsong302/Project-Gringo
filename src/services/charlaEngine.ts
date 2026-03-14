@@ -153,6 +153,7 @@ async function handleToolCall(
   toolName: string,
   toolInput: Record<string, unknown>,
   userId?: number,
+  slackUserId?: string,
 ): Promise<string> {
   // Built-in charla tools
   if (toolName === 'pronounce') {
@@ -170,7 +171,7 @@ async function handleToolCall(
   }
 
   // Admin tools — delegated to adminTools.ts executeTool
-  return executeTool(toolName, toolInput);
+  return executeTool(toolName, toolInput, slackUserId);
 }
 
 // ── Admin context snapshot ───────────────────────────────────
@@ -380,7 +381,7 @@ export async function generateCharlaResponse(
         observationCount++;
       }
 
-      const result = await handleToolCall(toolUse.name, toolUse.input as Record<string, unknown>, userId);
+      const result = await handleToolCall(toolUse.name, toolUse.input as Record<string, unknown>, userId, slackUserId);
       toolResults.push({
         type: 'tool_result',
         tool_use_id: toolUse.id,

@@ -349,6 +349,22 @@ CREATE TABLE IF NOT EXISTS home_sessions (
 );
 
 -- ============================================================
+-- Admin Audit Log (tracks admin tool invocations)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_slack_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT,
+    before_snapshot TEXT,
+    after_snapshot TEXT,
+    input_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ============================================================
 -- Indexes
 -- ============================================================
 
@@ -374,6 +390,9 @@ CREATE TABLE IF NOT EXISTS lesson_bank (
     generated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE INDEX IF NOT EXISTS idx_audit_log_admin ON admin_audit_log(admin_slack_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_tool ON admin_audit_log(tool_name, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_target ON admin_audit_log(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_curriculum_units_order ON curriculum_units(unit_order);
 CREATE INDEX IF NOT EXISTS idx_user_curriculum_user ON user_curriculum_progress(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_placement_tests_user ON placement_tests(user_id);

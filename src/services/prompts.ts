@@ -377,7 +377,7 @@ Respond with JSON only:
   "passed": <true if score >= pass_threshold>,
   "feedback": "<2-3 sentences: what they did well, what to improve. Be encouraging but honest. Write in English.>",
   "errors": ["<specific error 1>", "<specific error 2>"],
-  "correction": "<The correct answer in Spanish. A single natural sentence or phrase showing how to say it properly. Only include when score < pass_threshold. Use empty string if they passed.>"
+  "correction": "<The correct answer in Spanish. A single natural sentence or phrase showing how to say it properly. Only include when score < pass_threshold. Use empty string if they passed. IMPORTANT: Never include template placeholders like [your city/country] or [your name] — always fill these in with realistic examples (e.g. 'Buenos Aires', 'María'). The correction will be read aloud as audio, so it must be speakable.>"
 }
 
 If there are no errors, use an empty array for errors and empty string for correction. Be specific about errors — don't just say "grammar", say what the actual mistake was.`,
