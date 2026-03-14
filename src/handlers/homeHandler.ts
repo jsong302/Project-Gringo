@@ -312,16 +312,36 @@ function buildGradeView(slackUserId: string, state: HomeSessionState): Record<st
 
   if (grade.passed) {
     // ── Pass view ──
-    blocks.push(...buildProgressBlocks(slackUserId));
     blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'header',
+      text: { type: 'plain_text', text: `:white_check_mark: Unit ${unit.unitOrder}: ${unit.title} — Passed!`, emoji: true },
+    });
     blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `:white_check_mark: *Unit ${unit.unitOrder}: ${unit.title}* — Passed (${grade.score}/5)\n\n:tada: ${grade.feedback}`,
+        text: `:tada: *Score: ${grade.score}/5*\n\n${grade.feedback}`,
       },
     });
-    blocks.push(...buildStatsBlocks(slackUserId));
+
+    if (grade.errors.length > 0) {
+      const errorLines = grade.errors.map((err) => `• ${err}`).join('\n');
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Notes for next time:*\n${errorLines}` },
+      });
+    }
+
+    if (grade.correction) {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Model answer:* _${grade.correction}_` },
+      });
+    }
+
+    blocks.push({ type: 'divider' });
+    blocks.push(...buildProgressBlocks(slackUserId));
     blocks.push(...buildDashboardActions(slackUserId));
   } else {
     // ── Fail view ──
