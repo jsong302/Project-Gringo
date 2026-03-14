@@ -41,6 +41,16 @@ import {
 import type { HomeSessionState } from '../services/homeSession';
 import { generatePronunciationAudio, generateCorrectionAudio } from '../services/pronunciation';
 import { uploadAudioToSlack } from '../utils/slackAudio';
+import {
+  getActiveExam,
+  startExitExam,
+  processExamAnswer,
+  clearActiveExam,
+  getPendingExitExam,
+  hasPassedExitExam,
+  getExamAttemptCount,
+  type ExitExamState,
+} from '../services/exitExam';
 
 const homeLog = log.withScope('home-tab');
 
@@ -151,6 +161,9 @@ function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
   const cardStats = getUserCardStats(user.id);
   const current = getCurrentUnit(user.id);
 
+  // Check if exit exam is needed
+  const pendingExam = getPendingExitExam(user.id, user.level);
+
   // Change button label based on whether user has an active lesson
   const hasActiveLesson = current && (current.progress.status === 'practicing' || current.progress.status === 'active');
   const state = getHomeSession(user.id);
@@ -163,34 +176,61 @@ function buildDashboardActions(slackUserId: string): Record<string, unknown>[] {
     ? `:recycle: Practice SRS (${cardStats.due} due)`
     : ':recycle: Practice SRS';
 
-  return [
-    { type: 'divider' },
+  const buttons: Record<string, unknown>[] = [];
+
+  if (pendingExam !== null) {
+    // Exit exam needed — show exam button as primary, hide Next Unit
+    const attempts = getExamAttemptCount(user.id, pendingExam);
+    const examLabel = attempts > 0
+      ? `:pencil: Retake Level ${pendingExam} Exit Exam`
+      : `:pencil: Take Level ${pendingExam} Exit Exam`;
+    buttons.push({
+      type: 'button',
+      text: { type: 'plain_text', text: examLabel, emoji: true },
+      action_id: 'home_start_exit_exam',
+      value: String(pendingExam),
+      style: 'primary',
+    });
+  } else {
+    buttons.push({
+      type: 'button',
+      text: { type: 'plain_text', text: nextLabel },
+      action_id: 'home_next_unit',
+      style: 'primary',
+    });
+  }
+
+  buttons.push(
     {
-      type: 'actions',
-      elements: [
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: nextLabel },
-          action_id: 'home_next_unit',
-          style: 'primary',
-        },
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: srsLabel },
-          action_id: 'home_practice_srs',
-        },
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: ':books: View Curriculum' },
-          action_id: 'home_view_curriculum',
-        },
-      ],
+      type: 'button',
+      text: { type: 'plain_text', text: srsLabel },
+      action_id: 'home_practice_srs',
     },
     {
+      type: 'button',
+      text: { type: 'plain_text', text: ':books: View Curriculum' },
+      action_id: 'home_view_curriculum',
+    },
+  );
+
+  const blocks: Record<string, unknown>[] = [
+    { type: 'divider' },
+    { type: 'actions', elements: buttons },
+  ];
+
+  if (pendingExam !== null) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `_You've completed all units in Level ${pendingExam}. Pass the exit exam to unlock Level ${pendingExam + 1}!_` }],
+    });
+  } else {
+    blocks.push({
       type: 'context',
       elements: [{ type: 'mrkdwn', text: '_This dashboard updates each time you open the app._' }],
-    },
-  ];
+    });
+  }
+
+  return blocks;
 }
 
 // ── View: Dashboard ─────────────────────────────────────────
@@ -786,6 +826,170 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
   return blocks;
 }
 
+// ── View: Exit Exam ──────────────────────────────────────────
+
+function buildExitExamView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [...buildProfileBlocks(slackUserId)];
+  const examState = getActiveExam(slackUserId);
+
+  if (!examState) {
+    // No active exam — go back to dashboard
+    return buildDashboardView(slackUserId);
+  }
+
+  const levelBand = examState.levelBand;
+  const total = examState.questions.length;
+  const idx = examState.currentIndex;
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'header',
+    text: { type: 'plain_text', text: `:pencil: Level ${levelBand} Exit Exam`, emoji: true },
+  });
+
+  // Show feedback for previous question
+  if (examState.showingFeedback && examState.lastFeedback) {
+    const fb = examState.lastFeedback;
+    const icon = fb.correct ? ':white_check_mark:' : ':x:';
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `${icon} ${fb.feedback}` },
+    });
+
+    if (idx < total) {
+      blocks.push({
+        type: 'actions',
+        elements: [{
+          type: 'button',
+          text: { type: 'plain_text', text: 'Next Question', emoji: true },
+          action_id: 'exit_exam_next',
+          style: 'primary',
+        }],
+      });
+    }
+    return blocks;
+  }
+
+  // Show current question
+  if (idx >= total) {
+    return buildDashboardView(slackUserId);
+  }
+
+  const question = examState.questions[idx];
+  const progressBar = buildProgressBar(idx, total);
+
+  blocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: `Question ${idx + 1} of ${total}  ${progressBar}` }],
+  });
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: `*${question.questionText}*` },
+  });
+
+  if (question.questionType === 'mc' && question.options) {
+    // Multiple choice — render as buttons
+    blocks.push({
+      type: 'actions',
+      elements: question.options.map((opt, i) => ({
+        type: 'button',
+        text: { type: 'plain_text', text: opt, emoji: true },
+        action_id: `exit_exam_mc_${i}`,
+        value: String(i),
+      })),
+    });
+  } else {
+    // fill_blank or translation — button to open modal
+    const label = question.questionType === 'translation'
+      ? ':pencil2: Type your translation'
+      : ':pencil2: Type your answer';
+    blocks.push({
+      type: 'actions',
+      elements: [{
+        type: 'button',
+        text: { type: 'plain_text', text: label, emoji: true },
+        action_id: 'exit_exam_open_modal',
+        style: 'primary',
+      }],
+    });
+  }
+
+  return blocks;
+}
+
+function buildExitExamResultView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [...buildProfileBlocks(slackUserId)];
+  const examState = getActiveExam(slackUserId);
+  const levelBand = state.exitExamLevel ?? 0;
+
+  blocks.push({ type: 'divider' });
+
+  if (examState?.passed) {
+    blocks.push({
+      type: 'header',
+      text: { type: 'plain_text', text: `:tada: Level ${levelBand} Exit Exam — Passed!`, emoji: true },
+    });
+
+    const totalCorrect = examState.answers.filter(a => a.correct).length;
+    const pct = Math.round((totalCorrect / examState.questions.length) * 100);
+
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: [
+          `:white_check_mark: *Score: ${totalCorrect}/${examState.questions.length} (${pct}%)*`,
+          '',
+          `Congratulations! You've completed Level ${levelBand} and unlocked Level ${levelBand + 1}!`,
+        ].join('\n'),
+      },
+    });
+  } else {
+    const totalCorrect = examState?.answers.filter(a => a.correct).length ?? 0;
+    const totalQ = examState?.questions.length ?? 0;
+    const pct = totalQ > 0 ? Math.round((totalCorrect / totalQ) * 100) : 0;
+
+    blocks.push({
+      type: 'header',
+      text: { type: 'plain_text', text: `:pencil: Level ${levelBand} Exit Exam — Not Yet`, emoji: true },
+    });
+
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: [
+          `:x: *Score: ${totalCorrect}/${totalQ} (${pct}%)* — need 70% to pass`,
+          '',
+          'Review the material and try again when you\'re ready. Each attempt has different questions!',
+        ].join('\n'),
+      },
+    });
+  }
+
+  // Show breakdown of answers
+  if (examState) {
+    const wrongAnswers = examState.answers.filter(a => !a.correct);
+    if (wrongAnswers.length > 0) {
+      const lines = wrongAnswers.slice(0, 5).map(a => {
+        const q = examState.questions.find(qq => qq.id === a.questionId);
+        return `• ${q?.questionText ?? 'Question'}\n  _${a.feedback}_`;
+      });
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Questions to review:*\n${lines.join('\n')}` },
+      });
+    }
+  }
+
+  blocks.push({ type: 'divider' });
+  blocks.push(...buildProgressBlocks(slackUserId));
+  blocks.push(...buildDashboardActions(slackUserId));
+
+  return blocks;
+}
+
 // ── Main block builder (exported for publishHomeTab) ────────
 
 export function buildHomeBlocks(slackUserId: string): Record<string, unknown>[] {
@@ -849,6 +1053,10 @@ export function buildHomeBlocks(slackUserId: string): Record<string, unknown>[] 
       return buildSrsSummaryView(slackUserId, state);
     case 'curriculum':
       return buildCurriculumView(slackUserId);
+    case 'exit_exam':
+      return buildExitExamView(slackUserId, state);
+    case 'exit_exam_result':
+      return buildExitExamResultView(slackUserId, state);
     default:
       return buildDashboardView(slackUserId);
   }
@@ -1035,7 +1243,7 @@ export function registerHomeHandler(app: App): void {
         }
 
         if (grade.passed) {
-          const { leveledUp, newLevel } = markUnitPassed(user.id, current.unit.id, grade.score);
+          const { leveledUp, newLevel, needsExitExam, exitExamLevel } = markUnitPassed(user.id, current.unit.id, grade.score);
           updateStreak(user.id);
 
           // Update state to show pass
@@ -1378,5 +1586,176 @@ export function registerHomeHandler(app: App): void {
     });
   });
 
+  // ── Exit Exam: Start ───────────────────────────────────────
+  app.action('home_start_exit_exam', async ({ ack, body, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      try {
+        const user = getOrCreateUser(slackUserId);
+        const levelBand = parseInt((body as any).actions?.[0]?.value ?? '0', 10);
+        if (!levelBand) return;
+
+        const examState = startExitExam(user.id, slackUserId, levelBand);
+        if (!examState) {
+          const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+          state.warningText = ':warning: Not enough exam questions for this level. Ask an admin to generate the question bank.';
+          state.view = 'dashboard';
+          setHomeSession(state);
+          await publishHomeTab(client, slackUserId);
+          return;
+        }
+
+        const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
+        state.view = 'exit_exam';
+        state.exitExamLevel = levelBand;
+        setHomeSession(state);
+        await publishHomeTab(client, slackUserId);
+
+        homeLog.info(`Exit exam started: level ${levelBand} for ${slackUserId}`);
+      } catch (err) {
+        homeLog.error(`Start exit exam failed: ${err}`);
+      }
+    });
+  });
+
+  // ── Exit Exam: MC answer ──────────────────────────────────
+  for (let i = 0; i < 4; i++) {
+    app.action(`exit_exam_mc_${i}`, async ({ ack, body, client }) => {
+      await ack();
+
+      await runWithObservabilityContext(async () => {
+        const slackUserId = body.user.id;
+        try {
+          const user = getOrCreateUser(slackUserId);
+          const selectedIdx = parseInt((body as any).actions?.[0]?.value ?? '0', 10);
+
+          const result = await processExamAnswer(slackUserId, selectedIdx);
+          if (!result) return;
+
+          if (result.testComplete) {
+            await finalizeExam(user.id, slackUserId, client);
+          } else {
+            await publishHomeTab(client, slackUserId);
+          }
+        } catch (err) {
+          homeLog.error(`Exit exam MC answer failed: ${err}`);
+        }
+      });
+    });
+  }
+
+  // ── Exit Exam: Open text modal ────────────────────────────
+  app.action('exit_exam_open_modal', async ({ ack, body, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      const examState = getActiveExam(slackUserId);
+      if (!examState) return;
+
+      const question = examState.questions[examState.currentIndex];
+      if (!question) return;
+
+      try {
+        await client.views.open({
+          trigger_id: (body as any).trigger_id,
+          view: {
+            type: 'modal',
+            callback_id: 'exit_exam_text_modal',
+            title: { type: 'plain_text', text: 'Exit Exam Answer' },
+            submit: { type: 'plain_text', text: 'Submit' },
+            blocks: [
+              {
+                type: 'section',
+                text: { type: 'mrkdwn', text: `*${question.questionText}*` },
+              },
+              {
+                type: 'input',
+                block_id: 'answer_block',
+                element: {
+                  type: 'plain_text_input',
+                  action_id: 'answer_input',
+                  placeholder: { type: 'plain_text', text: 'Type your answer...' },
+                },
+                label: { type: 'plain_text', text: 'Your Answer' },
+              },
+            ],
+          },
+        });
+      } catch (err) {
+        homeLog.error(`Open exit exam modal failed: ${err}`);
+      }
+    });
+  });
+
+  // ── Exit Exam: Text modal submission ──────────────────────
+  app.view('exit_exam_text_modal', async ({ ack, body, view, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      try {
+        const user = getOrCreateUser(slackUserId);
+        const answer = view.state.values.answer_block?.answer_input?.value ?? '';
+
+        const result = await processExamAnswer(slackUserId, answer);
+        if (!result) return;
+
+        if (result.testComplete) {
+          await finalizeExam(user.id, slackUserId, client);
+        } else {
+          await publishHomeTab(client, slackUserId);
+        }
+      } catch (err) {
+        homeLog.error(`Exit exam text answer failed: ${err}`);
+      }
+    });
+  });
+
+  // ── Exit Exam: Next question ──────────────────────────────
+  app.action('exit_exam_next', async ({ ack, body, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      try {
+        const examState = getActiveExam(slackUserId);
+        if (!examState) return;
+
+        // Clear feedback, show next question
+        examState.showingFeedback = false;
+        examState.lastFeedback = null;
+        await publishHomeTab(client, slackUserId);
+      } catch (err) {
+        homeLog.error(`Exit exam next failed: ${err}`);
+      }
+    });
+  });
+
   homeLog.info('Home tab handler registered');
+}
+
+// ── Exit Exam finalization helper ───────────────────────────
+
+async function finalizeExam(userId: number, slackUserId: string, client: any): Promise<void> {
+  const examState = getActiveExam(slackUserId);
+  if (!examState) return;
+
+  const state = getHomeSession(userId) ?? createDefaultSession(userId, slackUserId);
+  state.exitExamLevel = examState.levelBand;
+
+  if (examState.passed) {
+    // Advance the user to the next level
+    const { updateLevel } = require('../services/userService');
+    const { activateNextUnit } = require('../services/curriculumDelivery');
+    updateLevel(userId, examState.levelBand + 1);
+    activateNextUnit(userId);
+    homeLog.info(`User ${slackUserId} passed level ${examState.levelBand} exit exam — advancing to level ${examState.levelBand + 1}`);
+  }
+
+  state.view = 'exit_exam_result';
+  setHomeSession(state);
+  await publishHomeTab(client, slackUserId);
 }

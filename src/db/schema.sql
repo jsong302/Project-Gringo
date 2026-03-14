@@ -390,6 +390,39 @@ CREATE TABLE IF NOT EXISTS lesson_bank (
     generated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ============================================================
+-- Exit Exam Question Bank
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS exit_exam_questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    level_band INTEGER NOT NULL CHECK (level_band BETWEEN 1 AND 4),
+    source_unit_id INTEGER REFERENCES curriculum_units(id),
+    question_type TEXT NOT NULL CHECK (question_type IN ('mc', 'fill_blank', 'translation')),
+    question_text TEXT NOT NULL,
+    options_json TEXT,
+    correct_index INTEGER,
+    answers_json TEXT,
+    translation_direction TEXT CHECK (translation_direction IN ('en_to_es', 'es_to_en')),
+    reference_answer TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS exit_exam_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    level_band INTEGER NOT NULL,
+    questions_json TEXT NOT NULL,
+    total_correct INTEGER NOT NULL,
+    total_questions INTEGER NOT NULL,
+    passed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_exit_exam_questions_level ON exit_exam_questions(level_band, status);
+CREATE INDEX IF NOT EXISTS idx_exit_exam_attempts_user ON exit_exam_attempts(user_id, level_band);
+
 CREATE INDEX IF NOT EXISTS idx_audit_log_admin ON admin_audit_log(admin_slack_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_log_tool ON admin_audit_log(tool_name, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_log_target ON admin_audit_log(target_type, target_id);

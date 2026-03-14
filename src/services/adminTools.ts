@@ -363,6 +363,36 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
     description: 'View which units have generated lessons in the bank and which are missing.',
     input_schema: { type: 'object', properties: {}, required: [] },
   },
+  // Exit exam bank
+  {
+    name: 'generate_exit_exam_bank',
+    description: 'Generate exit exam question bank for a level (or all levels 1-4). Generates ~10 questions per unit via LLM. Use force=true to regenerate existing questions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        level: { type: 'number', description: 'Level band (1-4). Omit to generate for all levels.' },
+        force: { type: 'boolean', description: 'If true, clear and regenerate existing questions.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'view_exit_exam_bank',
+    description: 'View how many exit exam questions exist per level.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'bypass_exit_exam',
+    description: 'Skip the exit exam and advance a user to the next level. Use for testing or special cases.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'number', description: 'User ID to advance' },
+        level: { type: 'number', description: 'Current level to bypass (the exam they would take)' },
+      },
+      required: ['user_id', 'level'],
+    },
+  },
   // Audit log
   {
     name: 'view_audit_log',
@@ -942,6 +972,76 @@ register('regenerate_lesson', async (input) => {
   const lessonText = await generateAndBankLesson(unitId);
   logAuditEntry(auditAdmin(), 'regenerate_lesson', 'lesson', unitId, { unitId, hadLesson: !!beforeText }, { unitId, lessonLength: lessonText.length }, input);
   return JSON.stringify({ success: true, unitId, lessonLength: lessonText.length });
+});
+
+// Exit exam bank
+register('generate_exit_exam_bank', (input) => {
+  const { isExamBankGenerating, generateBankForLevel, generateAllExamBanks } = require('./exitExamBank');
+  if (isExamBankGenerating()) {
+    return JSON.stringify({
+      success: false,
+      message: 'Exit exam bank generation is already running.',
+    });
+  }
+  const level = input.level as number | undefined;
+  const force = (input.force as boolean) ?? false;
+
+  if (level) {
+    generateBankForLevel(level, force).then((result: any) => {
+      toolLog.info(`Exit exam bank for level ${level}: ${JSON.stringify(result)}`);
+    }).catch((err: any) => {
+      toolLog.error(`Exit exam bank generation failed: ${err}`);
+    });
+    return JSON.stringify({
+      success: true,
+      message: `Generating exit exam questions for level ${level} in the background.${force ? ' (force mode — replacing existing questions)' : ''}`,
+    });
+  }
+
+  generateAllExamBanks(force).then((result: any) => {
+    toolLog.info(`All exit exam banks: ${JSON.stringify(result)}`);
+  }).catch((err: any) => {
+    toolLog.error(`Exit exam bank generation failed: ${err}`);
+  });
+  return JSON.stringify({
+    success: true,
+    message: `Generating exit exam questions for all levels (1-4) in the background.${force ? ' (force mode — replacing existing questions)' : ''}`,
+  });
+});
+
+register('view_exit_exam_bank', () => {
+  const { getQuestionBankStats } = require('./exitExam');
+  const stats = getQuestionBankStats();
+  return JSON.stringify({
+    levels: stats,
+    total: stats.reduce((sum: number, s: any) => sum + s.count, 0),
+    message: stats.length === 0
+      ? 'No exit exam questions generated yet. Use generate_exit_exam_bank to create them.'
+      : `${stats.reduce((sum: number, s: any) => sum + s.count, 0)} total questions across ${stats.length} levels.`,
+  }, null, 2);
+});
+
+register('bypass_exit_exam', (input) => {
+  const userId = input.user_id as number;
+  const level = input.level as number;
+  const user = getUserById(userId);
+  if (!user) return JSON.stringify({ error: `User not found: ${userId}` });
+
+  // Insert a passing exam attempt
+  const db = getDb();
+  db.run(
+    `INSERT INTO exit_exam_attempts (user_id, level_band, questions_json, total_correct, total_questions, passed)
+     VALUES (${userId}, ${level}, '[]', 0, 0, 1)`,
+  );
+
+  // Advance to next level
+  updateLevel(userId, level + 1);
+
+  logAuditEntry(auditAdmin(), 'bypass_exit_exam', 'user', userId, { level: user.level }, { level: level + 1 }, input);
+  return JSON.stringify({
+    success: true,
+    message: `Bypassed level ${level} exit exam for user ${user.displayName ?? userId}. Advanced to level ${level + 1}.`,
+  });
 });
 
 // Audit log

@@ -324,8 +324,24 @@ export function activateNextUnit(userId: number): CurriculumUnit | null {
 
   const unit = getUnit(unitId);
   if (unit) {
-    // Update level if the new unit is in a different band
+    // Check if exit exam is needed before advancing to new level
     const user = getUserById(userId);
+    if (user && unit.levelBand > user.level) {
+      const { getPendingExitExam } = require('./exitExam');
+      const pendingExam = getPendingExitExam(userId, user.level);
+      if (pendingExam !== null) {
+        // Revert: don't activate this unit yet
+        db.run(
+          `UPDATE user_curriculum_progress
+           SET status = 'locked', started_at = NULL, updated_at = datetime('now')
+           WHERE user_id = ${userId} AND unit_id = ${unitId}`,
+        );
+        delLog.info(`User ${userId} needs exit exam for level ${user.level} before advancing to unit ${unit.unitOrder}`);
+        return null;
+      }
+    }
+
+    // Update level if the new unit is in a different band
     if (user && user.level !== unit.levelBand) {
       updateLevel(userId, unit.levelBand);
       delLog.info(`User ${userId} level updated to ${unit.levelBand} (unit ${unit.unitOrder})`);
@@ -348,9 +364,9 @@ export function markUnitPracticing(userId: number, unitId: number): void {
 }
 
 /**
- * Mark a unit as passed and return whether the user leveled up.
+ * Mark a unit as passed and return whether the user leveled up or needs an exit exam.
  */
-export function markUnitPassed(userId: number, unitId: number, score: number): { leveledUp: boolean; newLevel: number } {
+export function markUnitPassed(userId: number, unitId: number, score: number): { leveledUp: boolean; newLevel: number; needsExitExam: boolean; exitExamLevel: number } {
   const db = getDb();
 
   db.run(
@@ -363,14 +379,21 @@ export function markUnitPassed(userId: number, unitId: number, score: number): {
   // Check if next unit is in a new level band
   const unit = getUnit(unitId);
   const user = getUserById(userId);
-  if (!unit || !user) return { leveledUp: false, newLevel: user?.level ?? 1 };
+  if (!unit || !user) return { leveledUp: false, newLevel: user?.level ?? 1, needsExitExam: false, exitExamLevel: 0 };
 
   const nextUnit = getUnitByOrder(unit.unitOrder + 1);
   if (nextUnit && nextUnit.levelBand > unit.levelBand) {
-    return { leveledUp: true, newLevel: nextUnit.levelBand };
+    // Check if exit exam is needed (imported lazily to avoid circular deps)
+    const { getPendingExitExam } = require('./exitExam');
+    const pendingExam = getPendingExitExam(userId, unit.levelBand);
+    if (pendingExam !== null) {
+      // Don't advance yet — user needs to pass the exit exam first
+      return { leveledUp: false, newLevel: user.level, needsExitExam: true, exitExamLevel: unit.levelBand };
+    }
+    return { leveledUp: true, newLevel: nextUnit.levelBand, needsExitExam: false, exitExamLevel: 0 };
   }
 
-  return { leveledUp: false, newLevel: user.level };
+  return { leveledUp: false, newLevel: user.level, needsExitExam: false, exitExamLevel: 0 };
 }
 
 /**
