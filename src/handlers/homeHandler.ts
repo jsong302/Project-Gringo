@@ -720,11 +720,18 @@ function appendExamRow(
   unitStatus: Map<number, { status: string; bestScore: number | null }>,
   userId: number,
   levelBand: number,
+  gatedAboveLevel: number,
 ): void {
   if (hasPassedExitExam(userId, levelBand)) {
     blocks.push({
       type: 'context',
       elements: [{ type: 'mrkdwn', text: `:white_check_mark: _Level ${levelBand} Exit Exam — passed_` }],
+    });
+  } else if (levelBand > gatedAboveLevel) {
+    // Locked — previous level exam not passed
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `:lock: _Level ${levelBand} Exit Exam — pass Level ${gatedAboveLevel} exam first_` }],
     });
   } else {
     const count = getQuestionCountForLevel(levelBand);
@@ -813,7 +820,7 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
 
       // Show exit exam row between levels (always visible in one of 3 states)
       if (currentBand > 0 && currentBand <= 4) {
-        appendExamRow(blocks, units, unitStatus, user.id, currentBand);
+        appendExamRow(blocks, units, unitStatus, user.id, currentBand, gatedAboveLevel);
         blocks.push({ type: 'divider' });
       }
 
@@ -878,7 +885,7 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
 
   // Show exit exam for the last level band
   if (currentBand > 0 && currentBand <= 4) {
-    appendExamRow(blocks, units, unitStatus, user.id, currentBand);
+    appendExamRow(blocks, units, unitStatus, user.id, currentBand, gatedAboveLevel);
   }
 
   // Slack Home tab has a 100-block limit — truncate if needed
@@ -994,6 +1001,17 @@ function buildExitExamView(slackUserId: string, state: HomeSessionState): Record
       }],
     });
   }
+
+  // Quit button
+  blocks.push({
+    type: 'actions',
+    elements: [{
+      type: 'button',
+      text: { type: 'plain_text', text: ':x: Quit Exam', emoji: true },
+      action_id: 'exit_exam_quit',
+      style: 'danger',
+    }],
+  });
 
   return blocks;
 }
@@ -1810,6 +1828,27 @@ export function registerHomeHandler(app: App): void {
         await publishHomeTab(client, slackUserId);
       } catch (err) {
         homeLog.error(`Exit exam next failed: ${err}`);
+      }
+    });
+  });
+
+  app.action('exit_exam_quit', async ({ ack, body, client }) => {
+    await ack();
+
+    await runWithObservabilityContext(async () => {
+      const slackUserId = body.user.id;
+      try {
+        clearActiveExam(slackUserId);
+        const user = getOrCreateUser(slackUserId);
+        const session = getHomeSession(user.id);
+        if (session) {
+          session.view = 'dashboard';
+          session.exitExamLevel = null;
+          setHomeSession(session);
+        }
+        await publishHomeTab(client, slackUserId);
+      } catch (err) {
+        homeLog.error(`Exit exam quit failed: ${err}`);
       }
     });
   });
