@@ -21,7 +21,7 @@ import { log } from './utils/logger';
 import { seedCurriculumIfEmpty, ensureVerbBasicsUnit, syncCurriculumPrompts } from './services/curriculum';
 import { migrateExistingUsers } from './services/curriculumMigration';
 import { ensureAuditTable } from './services/auditLog';
-import { ensureContentQueueTables, getNextReadyLesson, markLessonAsSent, getNextReadyLunfardo, markLunfardoAsSent } from './services/contentQueue';
+import { ensureContentQueueTables, getNextReadyLesson, markLessonAsSent, getNextReadyLunfardo, markLunfardoAsSent, refillContentQueues } from './services/contentQueue';
 
 const bootLog = log.withScope('boot');
 
@@ -211,6 +211,13 @@ const bootLog = log.withScope('boot');
         await sendOnboardingFollowUp(app.client);
       } catch (err) {
         bootLog.error(`Onboarding follow-up failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    refillQueues: async () => {
+      try {
+        await refillContentQueues();
+      } catch (err) {
+        bootLog.error(`Queue refill failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
   });

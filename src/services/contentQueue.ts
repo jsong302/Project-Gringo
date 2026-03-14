@@ -603,3 +603,52 @@ export async function regenerateLunfardoQueueItem(id: number): Promise<LunfardoQ
   queueLog.info(`Regenerated lunfardo queue item ${id}: "${post.word}"`);
   return getLunfardoQueueItem(id);
 }
+
+// ── Auto-refill ──────────────────────────────────────────────
+
+const MIN_LESSON_DAYS = 10;
+const MIN_LUNFARDO_DAYS = 10;
+const REFILL_LESSON_TARGET = 10;
+const REFILL_LUNFARDO_TARGET = 14;
+
+/**
+ * Check queue levels and generate more content if running low.
+ * Designed to run as a daily cron job (e.g. 7 AM).
+ */
+export async function refillContentQueues(): Promise<void> {
+  const stats = getQueueStats();
+
+  queueLog.info(
+    `Queue check — lessons ready: ${stats.lessons.ready}, lunfardo ready: ${stats.lunfardo.ready}`,
+  );
+
+  const tasks: Promise<void>[] = [];
+
+  if (stats.lessons.ready < MIN_LESSON_DAYS) {
+    queueLog.info(
+      `Lessons below threshold (${stats.lessons.ready} < ${MIN_LESSON_DAYS}) — refilling to ${REFILL_LESSON_TARGET}`,
+    );
+    tasks.push(
+      generateLessonQueue(REFILL_LESSON_TARGET).then((r) => {
+        queueLog.info(`Lesson refill: ${r.generated} generated, ${r.errors} errors`);
+      }),
+    );
+  }
+
+  if (stats.lunfardo.ready < MIN_LUNFARDO_DAYS) {
+    queueLog.info(
+      `Lunfardo below threshold (${stats.lunfardo.ready} < ${MIN_LUNFARDO_DAYS}) — refilling to ${REFILL_LUNFARDO_TARGET}`,
+    );
+    tasks.push(
+      generateLunfardoQueue(REFILL_LUNFARDO_TARGET).then((r) => {
+        queueLog.info(`Lunfardo refill: ${r.generated} generated, ${r.errors} errors`);
+      }),
+    );
+  }
+
+  if (tasks.length > 0) {
+    await Promise.all(tasks);
+  } else {
+    queueLog.info('Queues are sufficiently stocked — no refill needed');
+  }
+}

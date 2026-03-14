@@ -80,14 +80,17 @@ export function createDefaultJobs(handlers: {
   sendSrsReminders?: () => Promise<void>;
   closeStaleThreads?: () => Promise<void>;
   sendOnboardingFollowUp?: () => Promise<void>;
+  refillQueues?: () => Promise<void>;
 }): ScheduledJob[] {
   let dailyLessonSchedule = '0 9 * * 1-5';
   let lunfardoSchedule = '0 12 * * *';
+  let refillSchedule = '0 11 * * *'; // 7 AM ET / 11:00 UTC daily
 
   try {
     const { getSetting } = require('../services/settings');
     dailyLessonSchedule = getSetting('cron.daily_lesson', dailyLessonSchedule) as string;
     lunfardoSchedule = getSetting('cron.lunfardo_del_dia', lunfardoSchedule) as string;
+    refillSchedule = getSetting('cron.queue_refill', refillSchedule) as string;
   } catch {
     // Settings not available yet — use defaults
   }
@@ -126,6 +129,14 @@ export function createDefaultJobs(handlers: {
       name: 'onboarding-follow-up',
       schedule: '0 * * * *', // Every hour
       handler: handlers.sendOnboardingFollowUp,
+    });
+  }
+
+  if (handlers.refillQueues) {
+    jobs.push({
+      name: 'queue-refill',
+      schedule: refillSchedule,
+      handler: handlers.refillQueues,
     });
   }
 
