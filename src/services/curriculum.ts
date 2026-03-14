@@ -223,6 +223,43 @@ export function ensureVerbBasicsUnit(): void {
   curLog.info('Inserted "How Spanish Verbs Work" unit');
 }
 
+/**
+ * Sync lesson/exercise prompts from DEFAULT_CURRICULUM to existing units.
+ * Runs on every boot — updates units whose prompts have changed in code.
+ */
+export function syncCurriculumPrompts(): void {
+  const db = getDb();
+  let updated = 0;
+
+  for (const seed of DEFAULT_CURRICULUM) {
+    if (!seed.lessonPrompt && !seed.exercisePrompt) continue;
+
+    const result = db.exec(
+      `SELECT id, lesson_prompt, exercise_prompt FROM curriculum_units WHERE topic = '${esc(seed.topic)}' AND status = 'active'`,
+    );
+    if (!result.length || !result[0].values.length) continue;
+
+    const [id, currentLesson, currentExercise] = result[0].values[0] as [number, string | null, string | null];
+    const changes: string[] = [];
+
+    if (seed.lessonPrompt && seed.lessonPrompt !== currentLesson) {
+      changes.push(`lesson_prompt = '${esc(seed.lessonPrompt)}'`);
+    }
+    if (seed.exercisePrompt && seed.exercisePrompt !== currentExercise) {
+      changes.push(`exercise_prompt = '${esc(seed.exercisePrompt)}'`);
+    }
+
+    if (changes.length > 0) {
+      db.run(`UPDATE curriculum_units SET ${changes.join(', ')} WHERE id = ${id}`);
+      updated++;
+    }
+  }
+
+  if (updated > 0) {
+    curLog.info(`Synced prompts for ${updated} curriculum unit(s)`);
+  }
+}
+
 export function seedCurriculumIfEmpty(): void {
   const count = getCurriculumCount();
   if (count > 0) {

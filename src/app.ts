@@ -18,7 +18,7 @@ import { recoverHomeSessions } from './services/homeSession';
 import { sendSrsReminders, sendLessonNotifications, sendOnboardingFollowUp } from './services/notifications';
 import { closeStaleConversations } from './services/conversationTracker';
 import { log } from './utils/logger';
-import { seedCurriculumIfEmpty, ensureVerbBasicsUnit } from './services/curriculum';
+import { seedCurriculumIfEmpty, ensureVerbBasicsUnit, syncCurriculumPrompts } from './services/curriculum';
 import { migrateExistingUsers } from './services/curriculumMigration';
 import { ensureAuditTable } from './services/auditLog';
 
@@ -58,6 +58,7 @@ const bootLog = log.withScope('boot');
   // 4c. Seed shared curriculum and migrate existing users
   seedCurriculumIfEmpty();
   ensureVerbBasicsUnit();
+  syncCurriculumPrompts();
   migrateExistingUsers();
 
   // 4c. Recover active review sessions from DB
