@@ -12,6 +12,7 @@ export interface AppConfig {
   logLevel: string;
   port: number;
   adminUserIds: string[];
+  tutorUserIds: string[];
 }
 
 export interface AnthropicConfig {

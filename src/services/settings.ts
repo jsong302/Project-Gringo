@@ -169,8 +169,9 @@ export const DEFAULT_SETTINGS: Array<{ key: string; value: unknown; description:
   { key: 'channels.repaso', value: '', description: 'Slack channel ID for repaso (empty = DMs only via /gringo repaso)' },
   { key: 'channels.admin', value: '', description: 'Slack channel ID for admin-only channel' },
 
-  // Admin
+  // Admin & Tutor
   { key: 'admin.user_ids', value: [], description: 'Slack user IDs with admin access (JSON array)' },
+  { key: 'tutor.user_ids', value: [], description: 'Slack user IDs with tutor access (JSON array)' },
 
   // Exit exams
   { key: 'exit_exam.pass_threshold', value: 0.7, description: 'Pass threshold for exit exams (0.0-1.0, default 0.7 = 70%)' },
@@ -208,6 +209,19 @@ export function getAdminUserIds(): string[] {
 export function isAdmin(slackUserId: string): boolean {
   const admins = getAdminUserIds();
   return admins.includes(slackUserId);
+}
+
+export function getTutorUserIds(): string[] {
+  return getSetting('tutor.user_ids', []);
+}
+
+export function isTutor(slackUserId: string): boolean {
+  return getTutorUserIds().includes(slackUserId);
+}
+
+/** Returns true if the user is an admin or tutor. */
+export function hasElevatedAccess(slackUserId: string): boolean {
+  return isAdmin(slackUserId) || isTutor(slackUserId);
 }
 
 export function getChannelConfig(purpose: string): string {

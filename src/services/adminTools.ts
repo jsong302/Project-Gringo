@@ -12,6 +12,7 @@ import {
   setSetting,
   listSettings,
   getAdminUserIds,
+  getTutorUserIds,
 } from './settings';
 import { getAllUsers, getUserById, updateLevel } from './userService';
 import { getUserCardStats } from './srsRepository';
@@ -185,6 +186,19 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'manage_admins',
     description: 'Add or remove admin users. Admins can access the admin agent to manage the bot.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['add', 'remove', 'list'], description: 'Action to perform' },
+        slack_user_id: { type: 'string', description: 'Slack user ID to add/remove (not needed for list)' },
+      },
+      required: ['action'],
+    },
+  },
+
+  {
+    name: 'manage_tutors',
+    description: 'Add or remove tutor users. Tutors can view/edit curriculum and content queues but cannot manage settings, users, or prompts.',
     input_schema: {
       type: 'object',
       properties: {
@@ -915,6 +929,39 @@ register('manage_admins', (input) => {
       setSetting('admin.user_ids', updated, undefined, 'admin-agent');
       logAuditEntry(auditAdmin(), 'manage_admins', 'admin', slackUserId, { admins: current }, { admins: updated }, input);
       return JSON.stringify({ success: true, action: 'removed', slackUserId, admins: updated });
+    }
+
+    default:
+      return JSON.stringify({ error: `Unknown action: ${action}. Use add, remove, or list.` });
+  }
+});
+
+register('manage_tutors', (input) => {
+  const action = input.action as string;
+  const slackUserId = input.slack_user_id as string | undefined;
+
+  const current = getTutorUserIds();
+
+  switch (action) {
+    case 'list':
+      return JSON.stringify({ tutors: current });
+
+    case 'add': {
+      if (!slackUserId) return JSON.stringify({ error: 'slack_user_id is required for add' });
+      if (current.includes(slackUserId)) return JSON.stringify({ error: `${slackUserId} is already a tutor` });
+      const updated = [...current, slackUserId];
+      setSetting('tutor.user_ids', updated, undefined, 'admin-agent');
+      logAuditEntry(auditAdmin(), 'manage_tutors', 'tutor', slackUserId, { tutors: current }, { tutors: updated }, input);
+      return JSON.stringify({ success: true, action: 'added', slackUserId, tutors: updated });
+    }
+
+    case 'remove': {
+      if (!slackUserId) return JSON.stringify({ error: 'slack_user_id is required for remove' });
+      if (!current.includes(slackUserId)) return JSON.stringify({ error: `${slackUserId} is not a tutor` });
+      const updated = current.filter((id) => id !== slackUserId);
+      setSetting('tutor.user_ids', updated, undefined, 'admin-agent');
+      logAuditEntry(auditAdmin(), 'manage_tutors', 'tutor', slackUserId, { tutors: current }, { tutors: updated }, input);
+      return JSON.stringify({ success: true, action: 'removed', slackUserId, tutors: updated });
     }
 
     default:

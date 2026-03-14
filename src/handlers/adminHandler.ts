@@ -6,7 +6,7 @@
  * access to admin tools + a live context snapshot.
  */
 import { log } from '../utils/logger';
-import { isAdmin } from '../services/settings';
+import { hasElevatedAccess } from '../services/settings';
 import { getOrCreateUser } from '../services/userService';
 import { processCharlaMessage, type CharlaResponse } from '../services/charlaEngine';
 import { getMemoryForPrompt } from '../services/userMemory';
@@ -72,8 +72,8 @@ export async function handleAdmin(
   message: string,
   respond: (msg: any) => Promise<void>,
 ): Promise<void> {
-  if (!isAdmin(slackUserId)) {
-    await respondEphemeral(respond, 'You don\'t have admin permissions. Ask an admin to add you.');
+  if (!hasElevatedAccess(slackUserId)) {
+    await respondEphemeral(respond, 'You don\'t have admin or tutor permissions. Ask an admin to add you.');
     return;
   }
 

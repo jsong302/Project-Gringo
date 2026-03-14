@@ -29,7 +29,7 @@ import {
 import type { GradeResult, StructuredLesson } from '../services/curriculumDelivery';
 import { getCurriculumCount, getCurriculum } from '../services/curriculum';
 import { getMemory } from '../services/userMemory';
-import { isAdmin } from '../services/settings';
+import { hasElevatedAccess } from '../services/settings';
 import { updateStreak } from '../services/userService';
 import {
   getHomeSession,
@@ -256,7 +256,7 @@ function formatShortDate(dateStr: string): string {
 }
 
 function buildAdminQueueSection(slackUserId: string): Record<string, unknown>[] {
-  if (!isAdmin(slackUserId)) return [];
+  if (!hasElevatedAccess(slackUserId)) return [];
 
   const stats = getQueueStats();
   const lessons = getLessonQueueItems({ status: 'ready', limit: 3 });
@@ -264,7 +264,7 @@ function buildAdminQueueSection(slackUserId: string): Record<string, unknown>[] 
 
   const blocks: Record<string, unknown>[] = [
     { type: 'divider' },
-    { type: 'header', text: { type: 'plain_text', text: ':clipboard: Admin — Content Queues', emoji: true } },
+    { type: 'header', text: { type: 'plain_text', text: ':clipboard: Content Queues', emoji: true } },
     {
       type: 'section',
       fields: [
@@ -1092,10 +1092,10 @@ function buildCurriculumView(slackUserId: string): Record<string, unknown>[] {
 
     const prog = unitStatus.get(unit.id);
     const status = prog?.status ?? 'locked';
-    const userIsAdmin = isAdmin(slackUserId);
-    // Units in levels above a gated exam are locked (unless admin)
-    const gatedByExam = !userIsAdmin && unit.levelBand > gatedAboveLevel;
-    const isClickable = !gatedByExam && (userIsAdmin || status === 'passed' || status === 'practicing' || status === 'active' || status === 'skipped');
+    const userIsElevated = hasElevatedAccess(slackUserId);
+    // Units in levels above a gated exam are locked (unless admin/tutor)
+    const gatedByExam = !userIsElevated && unit.levelBand > gatedAboveLevel;
+    const isClickable = !gatedByExam && (userIsElevated || status === 'passed' || status === 'practicing' || status === 'active' || status === 'skipped');
 
     let icon: string;
     let suffix = '';
@@ -1415,13 +1415,13 @@ export function buildHomeBlocks(slackUserId: string): Record<string, unknown>[] 
     case 'exit_exam_result':
       return buildExitExamResultView(slackUserId, state);
     case 'admin_lesson_queue':
-      return isAdmin(slackUserId) ? buildAdminLessonQueueView(slackUserId) : buildDashboardView(slackUserId);
+      return hasElevatedAccess(slackUserId) ? buildAdminLessonQueueView(slackUserId) : buildDashboardView(slackUserId);
     case 'admin_lunfardo_queue':
-      return isAdmin(slackUserId) ? buildAdminLunfardoQueueView(slackUserId) : buildDashboardView(slackUserId);
+      return hasElevatedAccess(slackUserId) ? buildAdminLunfardoQueueView(slackUserId) : buildDashboardView(slackUserId);
     case 'admin_lesson_detail':
-      return isAdmin(slackUserId) ? buildAdminLessonDetailView(slackUserId, state) : buildDashboardView(slackUserId);
+      return hasElevatedAccess(slackUserId) ? buildAdminLessonDetailView(slackUserId, state) : buildDashboardView(slackUserId);
     case 'admin_lunfardo_detail':
-      return isAdmin(slackUserId) ? buildAdminLunfardoDetailView(slackUserId, state) : buildDashboardView(slackUserId);
+      return hasElevatedAccess(slackUserId) ? buildAdminLunfardoDetailView(slackUserId, state) : buildDashboardView(slackUserId);
     default:
       return buildDashboardView(slackUserId);
   }
@@ -2126,7 +2126,7 @@ export function registerHomeHandler(app: App): void {
     await ack();
     await runWithObservabilityContext(async () => {
       const slackUserId = body.user.id;
-      if (!isAdmin(slackUserId)) return;
+      if (!hasElevatedAccess(slackUserId)) return;
       try {
         const user = getOrCreateUser(slackUserId);
         const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
@@ -2144,7 +2144,7 @@ export function registerHomeHandler(app: App): void {
     await ack();
     await runWithObservabilityContext(async () => {
       const slackUserId = body.user.id;
-      if (!isAdmin(slackUserId)) return;
+      if (!hasElevatedAccess(slackUserId)) return;
       try {
         const user = getOrCreateUser(slackUserId);
         const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
@@ -2163,7 +2163,7 @@ export function registerHomeHandler(app: App): void {
     await ack();
     await runWithObservabilityContext(async () => {
       const slackUserId = body.user.id;
-      if (!isAdmin(slackUserId)) return;
+      if (!hasElevatedAccess(slackUserId)) return;
       try {
         const user = getOrCreateUser(slackUserId);
         const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
@@ -2181,7 +2181,7 @@ export function registerHomeHandler(app: App): void {
     await ack();
     await runWithObservabilityContext(async () => {
       const slackUserId = body.user.id;
-      if (!isAdmin(slackUserId)) return;
+      if (!hasElevatedAccess(slackUserId)) return;
       try {
         const user = getOrCreateUser(slackUserId);
         const state = getHomeSession(user.id) ?? createDefaultSession(user.id, slackUserId);
@@ -2200,7 +2200,7 @@ export function registerHomeHandler(app: App): void {
     await ack();
     await runWithObservabilityContext(async () => {
       const slackUserId = body.user.id;
-      if (!isAdmin(slackUserId)) return;
+      if (!hasElevatedAccess(slackUserId)) return;
       try {
         const actionId = (action as any).action_id as string;
         const itemId = parseInt(actionId.replace('home_admin_lesson_', ''), 10);
@@ -2221,7 +2221,7 @@ export function registerHomeHandler(app: App): void {
     await ack();
     await runWithObservabilityContext(async () => {
       const slackUserId = body.user.id;
-      if (!isAdmin(slackUserId)) return;
+      if (!hasElevatedAccess(slackUserId)) return;
       try {
         const actionId = (action as any).action_id as string;
         const itemId = parseInt(actionId.replace('home_admin_lunfardo_', ''), 10);
@@ -2242,7 +2242,7 @@ export function registerHomeHandler(app: App): void {
     await ack();
     await runWithObservabilityContext(async () => {
       const slackUserId = body.user.id;
-      if (!isAdmin(slackUserId)) return;
+      if (!hasElevatedAccess(slackUserId)) return;
       try {
         const actionId = (body as any).actions?.[0]?.action_id as string;
         const itemId = actionId.replace('home_admin_edit_lesson_', '');
@@ -2260,7 +2260,7 @@ export function registerHomeHandler(app: App): void {
     await ack();
     await runWithObservabilityContext(async () => {
       const slackUserId = body.user.id;
-      if (!isAdmin(slackUserId)) return;
+      if (!hasElevatedAccess(slackUserId)) return;
       try {
         const actionId = (body as any).actions?.[0]?.action_id as string;
         const itemId = actionId.replace('home_admin_edit_lunfardo_', '');

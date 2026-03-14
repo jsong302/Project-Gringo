@@ -58,6 +58,10 @@ export function loadConfig(): Config {
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean),
+      tutorUserIds: opt('TUTOR_USER_IDS', '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
     },
   };
 
@@ -103,6 +107,7 @@ export function printConfigSnapshot(config: Config): void {
   configLog.info(`  app.logLevel: ${config.app.logLevel}`);
   configLog.info(`  app.port: ${config.app.port}`);
   configLog.info(`  app.adminUserIds: [${config.app.adminUserIds.join(', ')}]`);
+  configLog.info(`  app.tutorUserIds: [${config.app.tutorUserIds.join(', ')}]`);
   configLog.info(`  anthropic: ${config.anthropic ? `configured (model: ${config.anthropic.model})` : 'not configured'}`);
   configLog.info(`  deepgram: ${config.deepgram ? 'configured' : 'not configured'}`);
   configLog.info(`  azure: ${config.azure ? `configured (region: ${config.azure.speechRegion})` : 'not configured'}`);

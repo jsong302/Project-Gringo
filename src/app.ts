@@ -4,7 +4,7 @@ import { App } from '@slack/bolt';
 import { loadConfig, printConfigSnapshot } from './config/env';
 import { initDb, closeDb } from './db';
 import { registerCommands } from './handlers/commands';
-import { seedDefaultSettings, getAdminUserIds, setSetting, getSetting } from './services/settings';
+import { seedDefaultSettings, getAdminUserIds, getTutorUserIds, setSetting, getSetting } from './services/settings';
 import { seedDefaultPrompts } from './services/prompts';
 import { seedAllContent } from './services/seedContent';
 import { createDefaultJobs, scheduleJobs, stopAllJobs } from './scheduler/cron';
@@ -76,6 +76,16 @@ const bootLog = log.withScope('boot');
     if (merged.length !== current.length) {
       setSetting('admin.user_ids', merged, 'Slack user IDs with admin access (JSON array)', 'bootstrap');
       bootLog.info(`Bootstrapped admin user IDs from env: ${config.app.adminUserIds.join(', ')}`);
+    }
+  }
+
+  // Bootstrap tutors from env
+  if (config.app.tutorUserIds.length > 0) {
+    const currentTutors = getTutorUserIds();
+    const mergedTutors = [...new Set([...currentTutors, ...config.app.tutorUserIds])];
+    if (mergedTutors.length !== currentTutors.length) {
+      setSetting('tutor.user_ids', mergedTutors, 'Slack user IDs with tutor access (JSON array)', 'bootstrap');
+      bootLog.info(`Bootstrapped tutor user IDs from env: ${config.app.tutorUserIds.join(', ')}`);
     }
   }
 

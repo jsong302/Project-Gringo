@@ -15,7 +15,7 @@ import { updateLevel, updateTimezone, updateDisplayName, updateResponseMode } fr
 import type { ResponseMode } from './userService';
 import { upsertMemory } from './userMemory';
 import { ADMIN_TOOL_DEFINITIONS, executeTool } from './adminTools';
-import { isAdmin, listSettings } from './settings';
+import { isAdmin, isTutor, listSettings } from './settings';
 import { getAllUsers, getUserById } from './userService';
 import { getMemoryForPrompt } from './userMemory';
 
@@ -94,15 +94,54 @@ const BASE_TOOLS: ToolDefinition[] = [PRONOUNCE_TOOL, LOG_OBSERVATION_TOOL, UPDA
 
 // ── Tool sets ───────────────────────────────────────────────
 
-/** Get the tool set for this user — base tools + admin tools if they're an admin. */
+/**
+ * Tutor tool whitelist — subset of admin tools available to tutors.
+ * Update this set when adding new admin tools that tutors should access.
+ */
+const TUTOR_TOOL_NAMES = new Set([
+  // Curriculum
+  'view_curriculum',
+  'view_curriculum_progress',
+  'edit_curriculum_unit',
+  'reorder_curriculum_unit',
+  'add_curriculum_unit',
+  // Lesson bank
+  'view_lesson_bank',
+  'generate_lesson_bank',
+  'regenerate_lesson',
+  'regenerate_all_lessons',
+  // Lesson queue
+  'view_lesson_queue',
+  'view_lesson_queue_item',
+  'edit_lesson_queue_item',
+  'regenerate_lesson_queue_item',
+  // Lunfardo queue
+  'view_lunfardo_queue',
+  'view_lunfardo_queue_item',
+  'edit_lunfardo_queue_item',
+  'regenerate_lunfardo_queue_item',
+  // Content generation
+  'fill_content_queue',
+]);
+
+/** Get the tool set for this user — admin → all tools, tutor → whitelist, student → base. */
 function getToolsForUser(slackUserId?: string): ToolDefinition[] {
-  if (slackUserId && isAdmin(slackUserId)) {
-    // Admin tools may duplicate base tool names (e.g. 'pronounce') — deduplicate,
-    // preferring the base tool definition.
+  if (!slackUserId) return BASE_TOOLS;
+
+  if (isAdmin(slackUserId)) {
     const baseNames = new Set(BASE_TOOLS.map((t) => t.name));
     const uniqueAdminTools = ADMIN_TOOL_DEFINITIONS.filter((t) => !baseNames.has(t.name));
     return [...BASE_TOOLS, ...uniqueAdminTools];
   }
+
+  if (isTutor(slackUserId)) {
+    const baseNames = new Set(BASE_TOOLS.map((t) => t.name));
+    const tutorTools = ADMIN_TOOL_DEFINITIONS.filter(
+      (t) => TUTOR_TOOL_NAMES.has(t.name) && !baseNames.has(t.name),
+    );
+    return [...BASE_TOOLS, ...tutorTools];
+  }
+
   return BASE_TOOLS;
 }
 
@@ -232,6 +271,44 @@ function buildAdminContextSnapshot(adminUserId?: number): string {
   return ctx;
 }
 
+function buildTutorContextSnapshot(tutorUserId?: number): string {
+  let ctx = '\n\n## Current State\n';
+
+  // Content queue stats
+  try {
+    const { getQueueStats } = require('./contentQueue');
+    const qStats = getQueueStats();
+    ctx += `\n### Content Queue\n`;
+    ctx += `- Daily lessons: ${qStats.lessons.ready} ready, ${qStats.lessons.sent} sent`;
+    if (qStats.lessons.nextDate) ctx += ` (next: ${qStats.lessons.nextDate})`;
+    ctx += '\n';
+    ctx += `- Lunfardo: ${qStats.lunfardo.ready} ready, ${qStats.lunfardo.sent} sent`;
+    if (qStats.lunfardo.nextDate) ctx += ` (next: ${qStats.lunfardo.nextDate})`;
+    ctx += '\n';
+    if (qStats.lessons.ready < 3) ctx += `- ⚠️ Low lesson queue — less than 3 days of content!\n`;
+    if (qStats.lunfardo.ready < 3) ctx += `- ⚠️ Low lunfardo queue — less than 3 days of content!\n`;
+  } catch {
+    // Content queue table may not exist yet
+  }
+
+  if (tutorUserId) {
+    try {
+      const tutor = getUserById(tutorUserId);
+      if (tutor) {
+        ctx += `\n### You are chatting with\n`;
+        ctx += `- Name: ${tutor.displayName ?? tutor.slackUserId}, internal user_id: ${tutor.id}\n`;
+        ctx += `- Level: ${tutor.level}, Streak: ${tutor.streakDays} days\n`;
+        const memory = getMemoryForPrompt(tutorUserId);
+        if (memory) ctx += `- ${memory}\n`;
+      }
+    } catch {
+      // Tutor user not in DB yet
+    }
+  }
+
+  return ctx;
+}
+
 // ── System prompt ───────────────────────────────────────────
 
 export function buildCharlaSystemPrompt(
@@ -241,6 +318,7 @@ export function buildCharlaSystemPrompt(
   isAdminUser?: boolean,
   adminUserId?: number,
   userId?: number,
+  isTutorUser?: boolean,
 ): string {
   const template = getPromptOrThrow('charla_system');
   let prompt = interpolate(template, { level: String(userLevel) });
@@ -309,6 +387,35 @@ Be concise and actionable. When making changes, confirm what you did.`;
     prompt += buildAdminContextSnapshot(adminUserId);
   }
 
+  if (isTutorUser && !isAdminUser) {
+    prompt += `\n\n--- Tutor Mode ---
+This user is a tutor. In addition to teaching Spanish, you can help them manage curriculum and content queues.
+
+IMPORTANT — Two different "lesson" concepts exist:
+- "Daily lessons" = pre-generated posts for the #daily-lesson channel. Managed via lesson queue tools (view_lesson_queue, fill_content_queue, etc.).
+- "Curriculum units" = the structured learning path users progress through one-by-one. Managed via curriculum tools (view_curriculum, add_curriculum_unit, etc.).
+These are completely separate systems. Do not confuse them.
+
+As a tutor, you can:
+- View and edit the shared curriculum (units, order, prompts, thresholds)
+- See everyone's curriculum progress
+- View and manage lesson bank content (view, generate, regenerate)
+- View and edit daily lesson and lunfardo queues (view, edit, regenerate)
+- Generate queue content (fill_content_queue)
+
+You cannot manage settings, users, prompts, admins, or delete/archive content.
+
+How to decide what to do:
+- If the message is casual conversation or Spanish practice → teach as normal
+- If the message asks about curriculum, lessons, or queues → use tutor tools
+- You can mix both in a single response
+
+Be concise and actionable. When making changes, confirm what you did.`;
+
+    // Give tutors a slimmed-down context snapshot (queue stats only)
+    prompt += buildTutorContextSnapshot(userId);
+  }
+
   return prompt;
 }
 
@@ -336,7 +443,8 @@ export async function generateCharlaResponse(
   slackUserId?: string,
 ): Promise<CharlaResponse> {
   const isAdminUser = slackUserId ? isAdmin(slackUserId) : false;
-  const system = buildCharlaSystemPrompt(userLevel, memoryContext, displayName, isAdminUser, userId, userId);
+  const isTutorUser = slackUserId ? isTutor(slackUserId) : false;
+  const system = buildCharlaSystemPrompt(userLevel, memoryContext, displayName, isAdminUser, userId, userId, isTutorUser);
   const tools = getToolsForUser(slackUserId);
 
   const messages: LlmMessage[] = [
@@ -352,7 +460,7 @@ export async function generateCharlaResponse(
   while (turns < MAX_TOOL_TURNS) {
     turns++;
 
-    const maxTokens = isAdminUser
+    const maxTokens = (isAdminUser || isTutorUser)
       ? getSetting('llm.admin_max_tokens', 2048)
       : getSetting('llm.charla_max_tokens', 512);
 
