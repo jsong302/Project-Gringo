@@ -346,17 +346,36 @@ Order them from foundational to advanced within the level. Make every topic prac
 - End the lesson with a *Vocabulary* section — a clean bullet list of ALL Spanish words and phrases from the lesson with their English translations. Do NOT use code blocks. Format each as: • *Spanish word/phrase* → English meaning
 - Students are on English keyboards — NEVER ask them to type accents, tildes, ¿, ¡, or ñ. Don't mention "proper punctuation" or "inverted question marks" in exercises. Accept plain ASCII.
 
+## Structure (IMPORTANT — follow this section format exactly)
+Organize the lesson into clear sections separated by a line containing only "---". Start each section with a title line in bold (e.g. *Introduction*, *Conjugation*, *Examples*, *Vocabulary*). The app will convert these into visually distinct cards.
+
+Example structure:
+*Introduction* :wave:
+Brief intro paragraph...
+---
+*Conjugation* :dart:
+The verb *ser* (to be — permanent)
+• yo → *soy* — I am
+• vos → *sos* — you are
+---
+*Examples* :speech_balloon:
+Example sentences here...
+---
+*Vocabulary* :books:
+• *hola* → hello
+• *como andas* → how are you
+
+Always end with a *Vocabulary* section listing every Spanish word/phrase from the lesson.
+
 ## Formatting rules (IMPORTANT — this is for Slack, not a website)
 - Write like you're texting a friend, not writing a textbook
 - Use Slack formatting: *bold* for Spanish words/phrases, _italic_ for translations or side notes
 - CRITICAL: Use SINGLE asterisks for bold (*bold*), NOT double asterisks (**bold**). Double asterisks show literal * characters in Slack.
 - Use emoji freely to make it fun and scannable (flags, check marks, pointing hands, etc.)
 - Do NOT use markdown headers (#, ##, etc.) — they render as literal # in Slack
-- Do NOT use horizontal rules (---) or excessive dashes
-- Use blank lines between sections — that's your only divider
+- Use "---" ONLY as section separators (exactly three dashes on their own line)
 - Use simple bullet points (• or -) for vocab lists
 - Keep paragraphs short (2-3 sentences max)
-- No "takeaway" checklists or summary boxes — just end naturally
 - Do NOT include practice questions with answers in the lesson — the exercise section handles that separately
 
 Keep the lesson focused and concise — around 300-500 words.`,

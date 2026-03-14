@@ -218,6 +218,62 @@ function buildDashboardView(slackUserId: string): Record<string, unknown>[] {
   return blocks;
 }
 
+// ── Lesson text → Block Kit parser ──────────────────────────
+
+/**
+ * Parse lesson text into structured Block Kit blocks.
+ * Splits on "---" separators and detects bold section titles.
+ * Falls back to a single section block if no separators found.
+ */
+function lessonTextToBlocks(lessonText: string): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [];
+
+  // Split on lines that are exactly "---" (with optional whitespace)
+  const sections = lessonText.split(/\n\s*---\s*\n/).map(s => s.trim()).filter(Boolean);
+
+  if (sections.length <= 1) {
+    // No separators — fall back to single block
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lessonText } });
+    return blocks;
+  }
+
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i];
+
+    // Check if section starts with a bold title line like "*Introduction* :wave:"
+    const titleMatch = section.match(/^\*([^*]+)\*\s*(:[^:]+:)?\s*\n/);
+
+    if (titleMatch) {
+      // Extract title text (strip emoji from header since header doesn't support mrkdwn)
+      const titleText = titleMatch[1].trim();
+      const emoji = titleMatch[2]?.trim() ?? '';
+      const headerText = emoji ? `${emoji} ${titleText}` : titleText;
+      const bodyText = section.slice(titleMatch[0].length).trim();
+
+      if (i > 0) blocks.push({ type: 'divider' });
+      blocks.push({
+        type: 'header',
+        text: { type: 'plain_text', text: headerText, emoji: true },
+      });
+      if (bodyText) {
+        blocks.push({
+          type: 'section',
+          text: { type: 'mrkdwn', text: bodyText },
+        });
+      }
+    } else {
+      // No title detected — render as plain section
+      if (i > 0) blocks.push({ type: 'divider' });
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: section },
+      });
+    }
+  }
+
+  return blocks;
+}
+
 // ── View: Lesson + Exercise ─────────────────────────────────
 
 function buildLessonView(slackUserId: string, state: HomeSessionState): Record<string, unknown>[] {
@@ -235,11 +291,7 @@ function buildLessonView(slackUserId: string, state: HomeSessionState): Record<s
       type: 'context',
       elements: [{ type: 'mrkdwn', text: `_Level ${unit.levelBand} | ${unit.topic}_` }],
     });
-    blocks.push({ type: 'divider' });
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: state.lessonText },
-    });
+    blocks.push(...lessonTextToBlocks(state.lessonText));
   }
 
   if (state.exerciseText) {
