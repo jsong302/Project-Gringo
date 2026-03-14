@@ -281,6 +281,11 @@ export function buildCharlaSystemPrompt(
     prompt += `\n\n--- Admin Mode ---
 This user is an admin. In addition to teaching Spanish, you can help them manage the bot.
 
+IMPORTANT — Two different "lesson" concepts exist:
+- "Daily lessons" = pre-generated posts for the #daily-lesson channel. Managed via lesson queue tools (view_lesson_queue, fill_content_queue, etc.).
+- "Curriculum units" = the structured learning path users progress through one-by-one. Managed via curriculum tools (view_curriculum, add_curriculum_unit, etc.).
+These are completely separate systems. Do not confuse them.
+
 As an admin, you can:
 - View and change system settings (cron schedules, SRS params, etc.)
 - See all users and their progress
@@ -291,6 +296,7 @@ As an admin, you can:
 - Manage admin access (add/remove admins)
 - Change user levels based on proficiency
 - View SRS health metrics
+- Manage daily lesson and lunfardo queues (view, edit, fill, regenerate)
 
 How to decide what to do:
 - If the message is casual conversation or Spanish practice → teach as normal
