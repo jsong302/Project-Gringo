@@ -18,6 +18,49 @@ import type { WordInfo } from './stt';
 
 const delLog = log.withScope('curriculum-delivery');
 
+// ── Structured lesson types ─────────────────────────────────
+
+export interface VocabEntry {
+  es: string;
+  en: string;
+  example?: string;
+  exampleEn?: string;
+}
+
+export interface LessonSection {
+  type: 'intro' | 'conjugation' | 'examples' | 'tips' | 'culture' | 'grammar' | 'generic';
+  title: string;
+  emoji?: string;
+  body: string;
+}
+
+export interface StructuredLesson {
+  version: number;
+  sections: LessonSection[];
+  vocabulary: VocabEntry[];
+}
+
+/**
+ * Parse lesson text — handles both structured JSON and legacy freeform text.
+ */
+export function parseLessonText(raw: string): StructuredLesson {
+  try {
+    // Strip code fences if present
+    const cleaned = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+    const parsed = JSON.parse(cleaned);
+    if (parsed.version && Array.isArray(parsed.sections)) {
+      return parsed as StructuredLesson;
+    }
+  } catch {
+    // Not JSON — legacy freeform text
+  }
+  return {
+    version: 0,
+    sections: [{ type: 'generic', title: 'Lesson', body: raw }],
+    vocabulary: [],
+  };
+}
+
 // ── DM message tracker (for cleanup after unit pass) ────────
 
 /** Track bot message timestamps per user so we can delete them after passing */
@@ -421,8 +464,14 @@ export async function generateAndBankLesson(unitId: number): Promise<string> {
     system: fullSystem,
     messages: [{ role: 'user', content: 'Deliver this lesson to me.' }],
     temperature: 0.7,
-    maxTokens: 1024,
+    maxTokens: 3000,
   });
+
+  // Validate JSON structure — if it fails, store raw text (backward compatible)
+  const parsed = parseLessonText(response.text);
+  if (parsed.version === 0) {
+    delLog.warn(`Lesson for unit ${unitId} was not valid JSON — storing as legacy text`);
+  }
 
   saveLessonToBank(unitId, response.text);
   return response.text;

@@ -331,54 +331,41 @@ Order them from foundational to advanced within the level. Make every topic prac
 - Use Rioplatense Spanish (voseo: vos hablás, vos tenés)
 - Give clear explanations in English, with all examples in Argentine Spanish
 - Include practical vocabulary with translations
-- For each new word/phrase, show: Spanish → English
-- When teaching verbs, ALWAYS show the infinitive form first, then show how it conjugates. Never jump straight to conjugated forms without connecting them to the infinitive. Beginners don't know that "soy" comes from "ser" unless you show them.
-- For conjugation tables, use a clean bullet list with bold and arrows. Do NOT use code blocks (triple backticks) — they look ugly. Example:
-*SER* _(to be — permanent)_
-• yo → *soy* — I am
-• vos → *sos* — you are
-• él/ella → *es* — he/she is
-• nosotros → *somos* — we are
-• ellos → *son* — they are
-- Keep it conversational and encouraging, not academic
+- When teaching verbs, ALWAYS show the infinitive form first, then show how it conjugates. Beginners don't know that "soy" comes from "ser" unless you show them.
+- Keep it conversational and encouraging, not academic — like texting a friend
 - Include 2-3 example sentences showing the concept in use
 - If relevant to the Argentina mission trip context, connect the lesson to that
-- End the lesson with a *Vocabulary* section — a clean bullet list of ALL Spanish words and phrases from the lesson with their English translations. Do NOT use code blocks. Format each as: • *Spanish word/phrase* → English meaning
-- Students are on English keyboards — NEVER ask them to type accents, tildes, ¿, ¡, or ñ. Don't mention "proper punctuation" or "inverted question marks" in exercises. Accept plain ASCII.
+- Students are on English keyboards — NEVER ask them to type accents, tildes, ¿, ¡, or ñ
+- Do NOT include practice questions with answers — the exercise section handles that separately
 
-## Structure (IMPORTANT — follow this section format exactly)
-Organize the lesson into clear sections separated by a line containing only "---". Start each section with a title line in bold (e.g. *Introduction*, *Conjugation*, *Examples*, *Vocabulary*). The app will convert these into visually distinct cards.
+## Text formatting (for the "body" fields)
+- Use *bold* for Spanish words (SINGLE asterisks, NOT double **)
+- Use _italic_ for translations or side notes
+- Use • for bullet points
+- Keep paragraphs short (2-3 sentences)
+- Use emoji to make it fun (:wave:, :dart:, :speech_balloon:, etc.)
+- Do NOT use markdown headers (#, ##), code blocks, or horizontal rules
 
-Example structure:
-*Introduction* :wave:
-Brief intro paragraph...
----
-*Conjugation* :dart:
-The verb *ser* (to be — permanent)
-• yo → *soy* — I am
-• vos → *sos* — you are
----
-*Examples* :speech_balloon:
-Example sentences here...
----
-*Vocabulary* :books:
-• *hola* → hello
-• *como andas* → how are you
+## Response format
+Respond ONLY with valid JSON (no code fences, no text before or after). Use this exact schema:
+{
+  "version": 1,
+  "sections": [
+    {"type": "intro", "title": "short title", "emoji": ":wave:", "body": "Slack mrkdwn content..."},
+    {"type": "conjugation", "title": "Conjugation: VERB", "emoji": ":dart:", "body": "conjugation content..."},
+    {"type": "examples", "title": "Examples", "emoji": ":speech_balloon:", "body": "example sentences..."},
+    {"type": "tips", "title": "Pro Tip", "emoji": ":bulb:", "body": "helpful tip..."}
+  ],
+  "vocabulary": [
+    {"es": "hola", "en": "hello"},
+    {"es": "como andas", "en": "how are you", "example": "Hola, como andas?", "exampleEn": "Hi, how are you?"}
+  ]
+}
 
-Always end with a *Vocabulary* section listing every Spanish word/phrase from the lesson.
-
-## Formatting rules (IMPORTANT — this is for Slack, not a website)
-- Write like you're texting a friend, not writing a textbook
-- Use Slack formatting: *bold* for Spanish words/phrases, _italic_ for translations or side notes
-- CRITICAL: Use SINGLE asterisks for bold (*bold*), NOT double asterisks (**bold**). Double asterisks show literal * characters in Slack.
-- Use emoji freely to make it fun and scannable (flags, check marks, pointing hands, etc.)
-- Do NOT use markdown headers (#, ##, etc.) — they render as literal # in Slack
-- Use "---" ONLY as section separators (exactly three dashes on their own line)
-- Use simple bullet points (• or -) for vocab lists
-- Keep paragraphs short (2-3 sentences max)
-- Do NOT include practice questions with answers in the lesson — the exercise section handles that separately
-
-Keep the lesson focused and concise — around 300-500 words.`,
+Section types: intro, conjugation, examples, tips, culture, grammar, generic.
+Use 3-6 sections depending on the topic. Always include an "intro" section first.
+The "vocabulary" array MUST list every Spanish word/phrase from the lesson with English translation.
+Keep the total lesson concise — around 300-500 words across all sections.`,
     description: 'Delivers a curriculum unit lesson to a student via DM',
   },
   {

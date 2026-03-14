@@ -24,8 +24,9 @@ import {
   generateAndBankLesson,
   getCachedExercise,
   cacheExercise,
+  parseLessonText,
 } from '../services/curriculumDelivery';
-import type { GradeResult } from '../services/curriculumDelivery';
+import type { GradeResult, StructuredLesson } from '../services/curriculumDelivery';
 import { getCurriculumCount, getCurriculum } from '../services/curriculum';
 import { getMemory } from '../services/userMemory';
 import { isAdmin } from '../services/settings';
@@ -218,57 +219,68 @@ function buildDashboardView(slackUserId: string): Record<string, unknown>[] {
   return blocks;
 }
 
-// ── Lesson text → Block Kit parser ──────────────────────────
+// ── Structured lesson → Block Kit renderer ──────────────────
 
 /**
- * Parse lesson text into structured Block Kit blocks.
- * Splits on "---" separators and detects bold section titles.
- * Falls back to a single section block if no separators found.
+ * Convert a structured lesson into Block Kit blocks.
+ * Handles both structured JSON lessons and legacy freeform text.
  */
-function lessonTextToBlocks(lessonText: string): Record<string, unknown>[] {
+function structuredLessonToBlocks(lessonText: string): Record<string, unknown>[] {
+  const lesson = parseLessonText(lessonText);
   const blocks: Record<string, unknown>[] = [];
 
-  // Split on lines that are exactly "---" (with optional whitespace)
-  const sections = lessonText.split(/\n\s*---\s*\n/).map(s => s.trim()).filter(Boolean);
-
-  if (sections.length <= 1) {
-    // No separators — fall back to single block
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lessonText } });
+  // Legacy freeform text — single section block
+  if (lesson.version === 0) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lesson.sections[0]?.body ?? lessonText } });
     return blocks;
   }
 
-  for (let i = 0; i < sections.length; i++) {
-    const section = sections[i];
+  // Render each section with header + body
+  for (let i = 0; i < lesson.sections.length; i++) {
+    const sec = lesson.sections[i];
+    const headerText = sec.emoji ? `${sec.emoji} ${sec.title}` : sec.title;
 
-    // Check if section starts with a bold title line like "*Introduction* :wave:"
-    const titleMatch = section.match(/^\*([^*]+)\*\s*(:[^:]+:)?\s*\n/);
+    if (i > 0) blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'header',
+      text: { type: 'plain_text', text: headerText, emoji: true },
+    });
 
-    if (titleMatch) {
-      // Extract title text (strip emoji from header since header doesn't support mrkdwn)
-      const titleText = titleMatch[1].trim();
-      const emoji = titleMatch[2]?.trim() ?? '';
-      const headerText = emoji ? `${emoji} ${titleText}` : titleText;
-      const bodyText = section.slice(titleMatch[0].length).trim();
-
-      if (i > 0) blocks.push({ type: 'divider' });
-      blocks.push({
-        type: 'header',
-        text: { type: 'plain_text', text: headerText, emoji: true },
-      });
-      if (bodyText) {
-        blocks.push({
-          type: 'section',
-          text: { type: 'mrkdwn', text: bodyText },
-        });
+    // Split body into chunks of ≤3000 chars (Slack section text limit)
+    const body = sec.body.trim();
+    if (body) {
+      if (body.length <= 3000) {
+        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: body } });
+      } else {
+        // Split at paragraph boundaries
+        const paragraphs = body.split(/\n\n/);
+        let chunk = '';
+        for (const p of paragraphs) {
+          if (chunk.length + p.length + 2 > 3000) {
+            blocks.push({ type: 'section', text: { type: 'mrkdwn', text: chunk.trim() } });
+            chunk = '';
+          }
+          chunk += (chunk ? '\n\n' : '') + p;
+        }
+        if (chunk.trim()) {
+          blocks.push({ type: 'section', text: { type: 'mrkdwn', text: chunk.trim() } });
+        }
       }
-    } else {
-      // No title detected — render as plain section
-      if (i > 0) blocks.push({ type: 'divider' });
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: section },
-      });
     }
+  }
+
+  // Render vocabulary as a final section
+  if (lesson.vocabulary.length > 0) {
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'header',
+      text: { type: 'plain_text', text: ':books: Vocabulary', emoji: true },
+    });
+    const vocabLines = lesson.vocabulary.map(v => `• *${v.es}* — ${v.en}`);
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: vocabLines.join('\n') },
+    });
   }
 
   return blocks;
@@ -291,7 +303,7 @@ function buildLessonView(slackUserId: string, state: HomeSessionState): Record<s
       type: 'context',
       elements: [{ type: 'mrkdwn', text: `_Level ${unit.levelBand} | ${unit.topic}_` }],
     });
-    blocks.push(...lessonTextToBlocks(state.lessonText));
+    blocks.push(...structuredLessonToBlocks(state.lessonText));
   }
 
   if (state.exerciseText) {
@@ -365,6 +377,13 @@ const SPANISH_PHRASE_RE = /(?<!\w)\*{1,2}([^*]+)\*{1,2}/g;
 const ENGLISH_STOP_WORDS = /^(the|and|or|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|could|should|may|might|shall|can|must|to|of|in|for|on|at|by|with|from|up|about|into|through|during|before|after|above|below|between|out|off|over|under|again|further|then|once|here|there|when|where|why|how|all|both|each|few|more|most|other|some|such|no|not|only|own|same|so|than|too|very|just|because|but|if|this|that|these|those|what|which|who|whom|step|exercise|answer|example|tip|note|practice|lesson|unit|level|try|use|say|now|let|get|go|make|like|good|also|one|two|three|your|you|we|they|it|he|she|i|me|my|our|his|her|its|their|them|us|him|check|back|next|new|need)\b/i;
 
 function extractSpanishPhrases(lessonText: string): string[] {
+  // Try structured vocabulary first
+  const lesson = parseLessonText(lessonText);
+  if (lesson.version > 0 && lesson.vocabulary.length > 0) {
+    return lesson.vocabulary.map(v => v.es).slice(0, 8);
+  }
+
+  // Legacy fallback: regex extraction from freeform text
   const matches: string[] = [];
   let match: RegExpExecArray | null;
   while ((match = SPANISH_PHRASE_RE.exec(lessonText)) !== null) {
