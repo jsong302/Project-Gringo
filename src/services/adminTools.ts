@@ -190,7 +190,7 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['add', 'remove', 'list'], description: 'Action to perform' },
-        slack_user_id: { type: 'string', description: 'Slack user ID to add/remove (not needed for list)' },
+        slack_user_id: { type: 'string', description: 'Slack user ID (U...), display name, or internal user ID. Resolved automatically. Not needed for list.' },
       },
       required: ['action'],
     },
@@ -203,7 +203,7 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['add', 'remove', 'list'], description: 'Action to perform' },
-        slack_user_id: { type: 'string', description: 'Slack user ID to add/remove (not needed for list)' },
+        slack_user_id: { type: 'string', description: 'Slack user ID (U...), display name, or internal user ID. Resolved automatically. Not needed for list.' },
       },
       required: ['action'],
     },
@@ -901,10 +901,46 @@ register('update_prompt', (input) => {
   return JSON.stringify({ success: true, name, textLength: promptText.length });
 });
 
+// ── User ID resolution ───────────────────────────────────────
+
+/**
+ * Resolve a user identifier (Slack ID, display name, or internal user ID)
+ * to a Slack user ID. Returns { slackUserId } on success or { error } on failure.
+ */
+function resolveSlackUserId(identifier: string | undefined): { slackUserId: string } | { error: string } {
+  if (!identifier) return { error: 'slack_user_id is required' };
+
+  // Already a Slack user ID
+  if (identifier.startsWith('U') && /^U[A-Z0-9]+$/.test(identifier)) {
+    return { slackUserId: identifier };
+  }
+
+  // Try to resolve by display name, slack username, or internal ID
+  const users = getAllUsers();
+  const lower = identifier.toLowerCase();
+
+  // Match by display name (case-insensitive)
+  const byName = users.find((u) => u.displayName?.toLowerCase() === lower);
+  if (byName) return { slackUserId: byName.slackUserId };
+
+  // Match by Slack user ID stored in DB (case-insensitive partial)
+  const bySlack = users.find((u) => u.slackUserId.toLowerCase() === lower);
+  if (bySlack) return { slackUserId: bySlack.slackUserId };
+
+  // Match by internal user ID
+  const asNum = parseInt(identifier, 10);
+  if (!isNaN(asNum)) {
+    const byId = users.find((u) => u.id === asNum);
+    if (byId) return { slackUserId: byId.slackUserId };
+  }
+
+  return { error: `Could not find user "${identifier}". Use a Slack user ID (U...), display name, or internal user ID.` };
+}
+
 // Admin management
 register('manage_admins', (input) => {
   const action = input.action as string;
-  const slackUserId = input.slack_user_id as string | undefined;
+  const rawId = input.slack_user_id as string | undefined;
 
   const current = getAdminUserIds();
 
@@ -913,7 +949,9 @@ register('manage_admins', (input) => {
       return JSON.stringify({ admins: current });
 
     case 'add': {
-      if (!slackUserId) return JSON.stringify({ error: 'slack_user_id is required for add' });
+      const resolved = resolveSlackUserId(rawId);
+      if ('error' in resolved) return JSON.stringify({ error: resolved.error });
+      const { slackUserId } = resolved;
       if (current.includes(slackUserId)) return JSON.stringify({ error: `${slackUserId} is already an admin` });
       const updated = [...current, slackUserId];
       setSetting('admin.user_ids', updated, undefined, 'admin-agent');
@@ -922,7 +960,9 @@ register('manage_admins', (input) => {
     }
 
     case 'remove': {
-      if (!slackUserId) return JSON.stringify({ error: 'slack_user_id is required for remove' });
+      const resolved = resolveSlackUserId(rawId);
+      if ('error' in resolved) return JSON.stringify({ error: resolved.error });
+      const { slackUserId } = resolved;
       if (!current.includes(slackUserId)) return JSON.stringify({ error: `${slackUserId} is not an admin` });
       if (current.length <= 1) return JSON.stringify({ error: 'Cannot remove the last admin' });
       const updated = current.filter((id) => id !== slackUserId);
@@ -938,7 +978,7 @@ register('manage_admins', (input) => {
 
 register('manage_tutors', (input) => {
   const action = input.action as string;
-  const slackUserId = input.slack_user_id as string | undefined;
+  const rawId = input.slack_user_id as string | undefined;
 
   const current = getTutorUserIds();
 
@@ -947,7 +987,9 @@ register('manage_tutors', (input) => {
       return JSON.stringify({ tutors: current });
 
     case 'add': {
-      if (!slackUserId) return JSON.stringify({ error: 'slack_user_id is required for add' });
+      const resolved = resolveSlackUserId(rawId);
+      if ('error' in resolved) return JSON.stringify({ error: resolved.error });
+      const { slackUserId } = resolved;
       if (current.includes(slackUserId)) return JSON.stringify({ error: `${slackUserId} is already a tutor` });
       const updated = [...current, slackUserId];
       setSetting('tutor.user_ids', updated, undefined, 'admin-agent');
@@ -956,7 +998,9 @@ register('manage_tutors', (input) => {
     }
 
     case 'remove': {
-      if (!slackUserId) return JSON.stringify({ error: 'slack_user_id is required for remove' });
+      const resolved = resolveSlackUserId(rawId);
+      if ('error' in resolved) return JSON.stringify({ error: resolved.error });
+      const { slackUserId } = resolved;
       if (!current.includes(slackUserId)) return JSON.stringify({ error: `${slackUserId} is not a tutor` });
       const updated = current.filter((id) => id !== slackUserId);
       setSetting('tutor.user_ids', updated, undefined, 'admin-agent');
