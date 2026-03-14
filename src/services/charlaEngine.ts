@@ -202,13 +202,13 @@ function buildAdminContextSnapshot(adminUserId?: number): string {
     const { getQueueStats } = require('./contentQueue');
     const qStats = getQueueStats();
     ctx += `\n### Content Queue\n`;
-    ctx += `- Daily lessons: ${qStats.daily_lesson.ready} ready, ${qStats.daily_lesson.sent} sent`;
-    if (qStats.nextLessonDate) ctx += ` (next: ${qStats.nextLessonDate})`;
+    ctx += `- Daily lessons: ${qStats.lessons.ready} ready, ${qStats.lessons.sent} sent`;
+    if (qStats.lessons.nextDate) ctx += ` (next: ${qStats.lessons.nextDate})`;
     ctx += '\n';
     ctx += `- Lunfardo: ${qStats.lunfardo.ready} ready, ${qStats.lunfardo.sent} sent`;
-    if (qStats.nextLunfardoDate) ctx += ` (next: ${qStats.nextLunfardoDate})`;
+    if (qStats.lunfardo.nextDate) ctx += ` (next: ${qStats.lunfardo.nextDate})`;
     ctx += '\n';
-    if (qStats.daily_lesson.ready < 3) ctx += `- ⚠️ Low lesson queue — less than 3 days of content!\n`;
+    if (qStats.lessons.ready < 3) ctx += `- ⚠️ Low lesson queue — less than 3 days of content!\n`;
     if (qStats.lunfardo.ready < 3) ctx += `- ⚠️ Low lunfardo queue — less than 3 days of content!\n`;
   } catch {
     // Content queue table may not exist yet

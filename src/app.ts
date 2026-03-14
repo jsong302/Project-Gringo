@@ -21,7 +21,7 @@ import { log } from './utils/logger';
 import { seedCurriculumIfEmpty, ensureVerbBasicsUnit, syncCurriculumPrompts } from './services/curriculum';
 import { migrateExistingUsers } from './services/curriculumMigration';
 import { ensureAuditTable } from './services/auditLog';
-import { ensureContentQueueTable, getNextReady, markAsSent } from './services/contentQueue';
+import { ensureContentQueueTables, getNextReadyLesson, markLessonAsSent, getNextReadyLunfardo, markLunfardoAsSent } from './services/contentQueue';
 
 const bootLog = log.withScope('boot');
 
@@ -55,7 +55,7 @@ const bootLog = log.withScope('boot');
 
   // 4b. Ensure audit log table exists
   ensureAuditTable();
-  ensureContentQueueTable();
+  ensureContentQueueTables();
 
   // 4c. Seed shared curriculum and migrate existing users
   seedCurriculumIfEmpty();
@@ -100,8 +100,8 @@ const bootLog = log.withScope('boot');
           return;
         }
 
-        // Try to pull from content queue first
-        const queued = getNextReady('daily_lesson');
+        // Try to pull from lesson queue first
+        const queued = getNextReadyLesson();
         let lesson: DailyLesson;
         let blocks: any[];
 
@@ -111,7 +111,7 @@ const bootLog = log.withScope('boot');
           bootLog.info(`Posting queued daily lesson: "${lesson.title}" (queue id ${queued.id})`);
         } else {
           // Fallback: generate on-the-fly
-          bootLog.warn('Content queue empty for daily lesson — generating on-the-fly');
+          bootLog.warn('Lesson queue empty — generating on-the-fly');
           const users = getAllUsers();
           const avgLevel = users.length > 0
             ? Math.round(users.reduce((sum, u) => sum + u.level, 0) / users.length)
@@ -126,7 +126,7 @@ const bootLog = log.withScope('boot');
 
         // Mark queue item as sent
         if (queued) {
-          markAsSent(queued.id, channelId, messageTs);
+          markLessonAsSent(queued.id, channelId, messageTs);
         }
 
         logLesson({ lessonType: 'daily', topic: lesson.title, contentJson: JSON.stringify(lesson), slackChannelId: channelId, slackMessageTs: messageTs });
@@ -154,8 +154,8 @@ const bootLog = log.withScope('boot');
           return;
         }
 
-        // Try to pull from content queue first
-        const queued = getNextReady('lunfardo');
+        // Try to pull from lunfardo queue first
+        const queued = getNextReadyLunfardo();
         let post: LunfardoPost;
         let blocks: any[];
 
@@ -165,7 +165,7 @@ const bootLog = log.withScope('boot');
           bootLog.info(`Posting queued lunfardo: "${post.word}" (queue id ${queued.id})`);
         } else {
           // Fallback: generate on-the-fly
-          bootLog.warn('Content queue empty for lunfardo — generating on-the-fly');
+          bootLog.warn('Lunfardo queue empty — generating on-the-fly');
           const result = await generateLunfardoPost();
           post = result.post;
           blocks = result.blocks;
@@ -176,7 +176,7 @@ const bootLog = log.withScope('boot');
 
         // Mark queue item as sent
         if (queued) {
-          markAsSent(queued.id, channelId, messageTs);
+          markLunfardoAsSent(queued.id, channelId, messageTs);
         }
 
         logLesson({ lessonType: 'lunfardo', topic: post.word, contentJson: JSON.stringify(post), slackChannelId: channelId, slackMessageTs: messageTs });

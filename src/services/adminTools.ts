@@ -408,13 +408,13 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   // Content Queue
+  // Content Queue — Lessons
   {
-    name: 'view_content_queue',
-    description: 'View upcoming queued content (daily lessons or lunfardo posts). Shows items in scheduled order with title, date, and status.',
+    name: 'view_lesson_queue',
+    description: 'View upcoming queued daily lessons. Shows items in scheduled order with title, date, difficulty, and status.',
     input_schema: {
       type: 'object',
       properties: {
-        content_type: { type: 'string', enum: ['daily_lesson', 'lunfardo'], description: 'Filter by content type. Omit for both.' },
         status: { type: 'string', enum: ['ready', 'sent', 'archived'], description: 'Filter by status. Default: ready.' },
         limit: { type: 'number', description: 'Max items to return (default 20)' },
       },
@@ -422,38 +422,39 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
-    name: 'view_queue_item',
-    description: 'View full details of a single content queue item including its complete content.',
+    name: 'view_lesson_queue_item',
+    description: 'View full details of a single lesson queue item including its complete content.',
     input_schema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'Queue item ID' },
+        id: { type: 'number', description: 'Lesson queue item ID' },
       },
       required: ['id'],
     },
   },
   {
-    name: 'edit_queue_item',
-    description: 'Edit a queued content item. You can modify the content JSON, title, scheduled date, or sort order. Blocks are automatically re-rendered from content.',
+    name: 'edit_lesson_queue_item',
+    description: 'Edit a queued lesson. You can modify the content JSON, title, scheduled date, difficulty, or sort order. Blocks are automatically re-rendered.',
     input_schema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'Queue item ID' },
+        id: { type: 'number', description: 'Lesson queue item ID' },
         title: { type: 'string', description: 'New title' },
-        content_json: { type: 'string', description: 'New content JSON (full DailyLesson or LunfardoPost object as JSON string)' },
+        content_json: { type: 'string', description: 'New content JSON (full DailyLesson object as JSON string)' },
         scheduled_date: { type: 'string', description: 'New scheduled date (YYYY-MM-DD)' },
         sort_order: { type: 'number', description: 'New sort order (lower = earlier)' },
+        difficulty: { type: 'number', description: 'New difficulty level' },
       },
       required: ['id'],
     },
   },
   {
-    name: 'reorder_queue_item',
-    description: 'Move a queued item to a different date and/or position.',
+    name: 'reorder_lesson_queue_item',
+    description: 'Move a queued lesson to a different date and/or position.',
     input_schema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'Queue item ID' },
+        id: { type: 'number', description: 'Lesson queue item ID' },
         new_date: { type: 'string', description: 'New scheduled date (YYYY-MM-DD)' },
         new_sort_order: { type: 'number', description: 'New sort order (default 0)' },
       },
@@ -461,37 +462,123 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
-    name: 'remove_queue_item',
-    description: 'Remove a queued content item. Archives by default; use permanent=true to delete entirely.',
+    name: 'remove_lesson_queue_item',
+    description: 'Remove a queued lesson. Archives by default; use permanent=true to delete entirely.',
     input_schema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'Queue item ID' },
+        id: { type: 'number', description: 'Lesson queue item ID' },
         permanent: { type: 'boolean', description: 'If true, permanently delete instead of archiving' },
       },
       required: ['id'],
     },
   },
   {
-    name: 'add_queue_item',
-    description: 'Manually add a content item to the queue.',
+    name: 'add_lesson_queue_item',
+    description: 'Manually add a daily lesson to the lesson queue.',
     input_schema: {
       type: 'object',
       properties: {
-        content_type: { type: 'string', enum: ['daily_lesson', 'lunfardo'], description: 'Content type' },
         scheduled_date: { type: 'string', description: 'Scheduled date (YYYY-MM-DD)' },
-        content_json: { type: 'string', description: 'Full content JSON (DailyLesson or LunfardoPost object)' },
+        content_json: { type: 'string', description: 'Full DailyLesson JSON object' },
       },
-      required: ['content_type', 'scheduled_date', 'content_json'],
+      required: ['scheduled_date', 'content_json'],
     },
   },
   {
-    name: 'regenerate_queue_item',
-    description: 'Re-generate a single queue item via LLM. Replaces content with freshly generated content.',
+    name: 'regenerate_lesson_queue_item',
+    description: 'Re-generate a single lesson queue item via LLM. Replaces content with freshly generated content.',
     input_schema: {
       type: 'object',
       properties: {
-        id: { type: 'number', description: 'Queue item ID' },
+        id: { type: 'number', description: 'Lesson queue item ID' },
+      },
+      required: ['id'],
+    },
+  },
+  // Content Queue — Lunfardo
+  {
+    name: 'view_lunfardo_queue',
+    description: 'View upcoming queued lunfardo posts. Shows items in scheduled order with word, date, and status.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['ready', 'sent', 'archived'], description: 'Filter by status. Default: ready.' },
+        limit: { type: 'number', description: 'Max items to return (default 20)' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'view_lunfardo_queue_item',
+    description: 'View full details of a single lunfardo queue item including its complete content.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Lunfardo queue item ID' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'edit_lunfardo_queue_item',
+    description: 'Edit a queued lunfardo post. You can modify the content JSON, word, scheduled date, or sort order. Blocks are automatically re-rendered.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Lunfardo queue item ID' },
+        word: { type: 'string', description: 'New word' },
+        content_json: { type: 'string', description: 'New content JSON (full LunfardoPost object as JSON string)' },
+        scheduled_date: { type: 'string', description: 'New scheduled date (YYYY-MM-DD)' },
+        sort_order: { type: 'number', description: 'New sort order (lower = earlier)' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'reorder_lunfardo_queue_item',
+    description: 'Move a queued lunfardo post to a different date and/or position.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Lunfardo queue item ID' },
+        new_date: { type: 'string', description: 'New scheduled date (YYYY-MM-DD)' },
+        new_sort_order: { type: 'number', description: 'New sort order (default 0)' },
+      },
+      required: ['id', 'new_date'],
+    },
+  },
+  {
+    name: 'remove_lunfardo_queue_item',
+    description: 'Remove a queued lunfardo post. Archives by default; use permanent=true to delete entirely.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Lunfardo queue item ID' },
+        permanent: { type: 'boolean', description: 'If true, permanently delete instead of archiving' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'add_lunfardo_queue_item',
+    description: 'Manually add a lunfardo post to the lunfardo queue.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        scheduled_date: { type: 'string', description: 'Scheduled date (YYYY-MM-DD)' },
+        content_json: { type: 'string', description: 'Full LunfardoPost JSON object' },
+      },
+      required: ['scheduled_date', 'content_json'],
+    },
+  },
+  {
+    name: 'regenerate_lunfardo_queue_item',
+    description: 'Re-generate a single lunfardo queue item via LLM. Replaces content with freshly generated content.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Lunfardo queue item ID' },
       },
       required: ['id'],
     },
@@ -1233,21 +1320,18 @@ register('view_audit_log', (input) => {
 
 // ── Content Queue tools ──────────────────────────────────────
 
-register('view_content_queue', (input) => {
-  const { getQueueItems, getQueueStats } = require('./contentQueue');
+// ── Lesson Queue tools ──────────────────────────────────────
+
+register('view_lesson_queue', (input) => {
+  const { getLessonQueueItems, getQueueStats } = require('./contentQueue');
   const status = (input.status as string) ?? 'ready';
-  const items = getQueueItems({
-    contentType: input.content_type as any,
-    status,
-    limit: (input.limit as number) ?? 20,
-  });
+  const items = getLessonQueueItems({ status, limit: (input.limit as number) ?? 20 });
   const stats = getQueueStats();
   return JSON.stringify({
-    stats,
+    stats: stats.lessons,
     count: items.length,
     items: items.map((item: any) => ({
       id: item.id,
-      type: item.contentType,
       date: item.scheduledDate,
       title: item.title,
       status: item.status,
@@ -1257,13 +1341,12 @@ register('view_content_queue', (input) => {
   }, null, 2);
 });
 
-register('view_queue_item', (input) => {
-  const { getQueueItem } = require('./contentQueue');
-  const item = getQueueItem(input.id as number);
-  if (!item) return JSON.stringify({ error: 'Queue item not found' });
+register('view_lesson_queue_item', (input) => {
+  const { getLessonQueueItem } = require('./contentQueue');
+  const item = getLessonQueueItem(input.id as number);
+  if (!item) return JSON.stringify({ error: 'Lesson queue item not found' });
   return JSON.stringify({
     id: item.id,
-    type: item.contentType,
     date: item.scheduledDate,
     status: item.status,
     title: item.title,
@@ -1275,26 +1358,25 @@ register('view_queue_item', (input) => {
   }, null, 2);
 });
 
-register('edit_queue_item', (input) => {
-  const { getQueueItem, updateQueueItem, rerenderBlocks } = require('./contentQueue');
+register('edit_lesson_queue_item', (input) => {
+  const { getLessonQueueItem, updateLessonQueueItem, rerenderLessonBlocks } = require('./contentQueue');
   const id = input.id as number;
-  const before = getQueueItem(id);
-  if (!before) return JSON.stringify({ error: 'Queue item not found' });
+  const before = getLessonQueueItem(id);
+  if (!before) return JSON.stringify({ error: 'Lesson queue item not found' });
 
   const fields: Record<string, unknown> = {};
   if (input.title) fields.title = input.title;
   if (input.scheduled_date) fields.scheduledDate = input.scheduled_date;
   if (input.sort_order !== undefined) fields.sortOrder = input.sort_order;
+  if (input.difficulty !== undefined) fields.difficulty = input.difficulty;
   if (input.content_json) {
     fields.contentJson = input.content_json as string;
-    // Re-render blocks from new content
-    const tempItem = { ...before, contentJson: input.content_json as string };
-    fields.blocksJson = rerenderBlocks(tempItem);
+    fields.blocksJson = rerenderLessonBlocks(input.content_json as string);
   }
 
-  updateQueueItem(id, fields);
-  const after = getQueueItem(id);
-  logAuditEntry(auditAdmin(), 'edit_queue_item', 'queue', id,
+  updateLessonQueueItem(id, fields);
+  const after = getLessonQueueItem(id);
+  logAuditEntry(auditAdmin(), 'edit_lesson_queue_item', 'lesson_queue', id,
     { title: before.title, date: before.scheduledDate },
     { title: after?.title, date: after?.scheduledDate },
     input,
@@ -1302,17 +1384,17 @@ register('edit_queue_item', (input) => {
   return JSON.stringify({ success: true, id, updated: Object.keys(fields) });
 });
 
-register('reorder_queue_item', (input) => {
-  const { getQueueItem, reorderQueueItem } = require('./contentQueue');
+register('reorder_lesson_queue_item', (input) => {
+  const { getLessonQueueItem, updateLessonQueueItem } = require('./contentQueue');
   const id = input.id as number;
-  const before = getQueueItem(id);
-  if (!before) return JSON.stringify({ error: 'Queue item not found' });
+  const before = getLessonQueueItem(id);
+  if (!before) return JSON.stringify({ error: 'Lesson queue item not found' });
 
   const newDate = input.new_date as string;
   const newSortOrder = (input.new_sort_order as number) ?? 0;
-  reorderQueueItem(id, newDate, newSortOrder);
+  updateLessonQueueItem(id, { scheduledDate: newDate, sortOrder: newSortOrder });
 
-  logAuditEntry(auditAdmin(), 'reorder_queue_item', 'queue', id,
+  logAuditEntry(auditAdmin(), 'reorder_lesson_queue_item', 'lesson_queue', id,
     { date: before.scheduledDate, sortOrder: before.sortOrder },
     { date: newDate, sortOrder: newSortOrder },
     input,
@@ -1320,20 +1402,20 @@ register('reorder_queue_item', (input) => {
   return JSON.stringify({ success: true, id, newDate, newSortOrder });
 });
 
-register('remove_queue_item', (input) => {
-  const { getQueueItem, archiveQueueItem, deleteQueueItem } = require('./contentQueue');
+register('remove_lesson_queue_item', (input) => {
+  const { getLessonQueueItem, archiveLessonQueueItem, deleteLessonQueueItem } = require('./contentQueue');
   const id = input.id as number;
-  const item = getQueueItem(id);
-  if (!item) return JSON.stringify({ error: 'Queue item not found' });
+  const item = getLessonQueueItem(id);
+  if (!item) return JSON.stringify({ error: 'Lesson queue item not found' });
 
   const permanent = (input.permanent as boolean) ?? false;
   if (permanent) {
-    deleteQueueItem(id);
+    deleteLessonQueueItem(id);
   } else {
-    archiveQueueItem(id);
+    archiveLessonQueueItem(id);
   }
 
-  logAuditEntry(auditAdmin(), 'remove_queue_item', 'queue', id,
+  logAuditEntry(auditAdmin(), 'remove_lesson_queue_item', 'lesson_queue', id,
     { title: item.title, date: item.scheduledDate, status: item.status },
     { status: permanent ? 'deleted' : 'archived' },
     input,
@@ -1341,14 +1423,12 @@ register('remove_queue_item', (input) => {
   return JSON.stringify({ success: true, id, action: permanent ? 'deleted' : 'archived' });
 });
 
-register('add_queue_item', (input) => {
-  const { insertQueueItem, rerenderBlocks } = require('./contentQueue');
-  const { formatDailyLessonBlocks, formatLunfardoBlocks } = require('./lessonEngine');
-  const contentType = input.content_type as string;
+register('add_lesson_queue_item', (input) => {
+  const { insertLessonQueueItem } = require('./contentQueue');
+  const { formatDailyLessonBlocks } = require('./lessonEngine');
   const scheduledDate = input.scheduled_date as string;
   const contentJson = input.content_json as string;
 
-  // Validate JSON
   let parsed: any;
   try {
     parsed = JSON.parse(contentJson);
@@ -1356,36 +1436,165 @@ register('add_queue_item', (input) => {
     return JSON.stringify({ error: 'Invalid content_json — must be valid JSON' });
   }
 
-  const title = contentType === 'daily_lesson' ? parsed.title : parsed.word;
-  let blocks: any[];
-  if (contentType === 'daily_lesson') {
-    blocks = formatDailyLessonBlocks(parsed);
-  } else {
-    blocks = formatLunfardoBlocks(parsed);
-  }
-
-  const id = insertQueueItem({
-    contentType: contentType as any,
+  const blocks = formatDailyLessonBlocks(parsed);
+  const id = insertLessonQueueItem({
     scheduledDate,
-    title: title ?? 'Untitled',
+    title: parsed.title ?? 'Untitled',
     contentJson,
     blocksJson: JSON.stringify(blocks),
     difficulty: parsed.difficulty,
   });
 
-  logAuditEntry(auditAdmin(), 'add_queue_item', 'queue', id,
-    null, { contentType, scheduledDate, title }, input,
+  logAuditEntry(auditAdmin(), 'add_lesson_queue_item', 'lesson_queue', id,
+    null, { scheduledDate, title: parsed.title }, input,
   );
-  return JSON.stringify({ success: true, id, title, scheduledDate });
+  return JSON.stringify({ success: true, id, title: parsed.title, scheduledDate });
 });
 
-register('regenerate_queue_item', async (input) => {
-  const { regenerateQueueItem } = require('./contentQueue');
+register('regenerate_lesson_queue_item', async (input) => {
+  const { regenerateLessonQueueItem } = require('./contentQueue');
   const id = input.id as number;
-  const item = await regenerateQueueItem(id);
-  if (!item) return JSON.stringify({ error: 'Queue item not found' });
+  const item = await regenerateLessonQueueItem(id);
+  if (!item) return JSON.stringify({ error: 'Lesson queue item not found' });
   return JSON.stringify({ success: true, id, title: item.title });
 });
+
+// ── Lunfardo Queue tools ────────────────────────────────────
+
+register('view_lunfardo_queue', (input) => {
+  const { getLunfardoQueueItems, getQueueStats } = require('./contentQueue');
+  const status = (input.status as string) ?? 'ready';
+  const items = getLunfardoQueueItems({ status, limit: (input.limit as number) ?? 20 });
+  const stats = getQueueStats();
+  return JSON.stringify({
+    stats: stats.lunfardo,
+    count: items.length,
+    items: items.map((item: any) => ({
+      id: item.id,
+      date: item.scheduledDate,
+      word: item.word,
+      status: item.status,
+      sortOrder: item.sortOrder,
+    })),
+  }, null, 2);
+});
+
+register('view_lunfardo_queue_item', (input) => {
+  const { getLunfardoQueueItem } = require('./contentQueue');
+  const item = getLunfardoQueueItem(input.id as number);
+  if (!item) return JSON.stringify({ error: 'Lunfardo queue item not found' });
+  return JSON.stringify({
+    id: item.id,
+    date: item.scheduledDate,
+    status: item.status,
+    word: item.word,
+    sortOrder: item.sortOrder,
+    content: JSON.parse(item.contentJson),
+    postedAt: item.postedAt,
+    createdAt: item.createdAt,
+  }, null, 2);
+});
+
+register('edit_lunfardo_queue_item', (input) => {
+  const { getLunfardoQueueItem, updateLunfardoQueueItem, rerenderLunfardoBlocks } = require('./contentQueue');
+  const id = input.id as number;
+  const before = getLunfardoQueueItem(id);
+  if (!before) return JSON.stringify({ error: 'Lunfardo queue item not found' });
+
+  const fields: Record<string, unknown> = {};
+  if (input.word) fields.word = input.word;
+  if (input.scheduled_date) fields.scheduledDate = input.scheduled_date;
+  if (input.sort_order !== undefined) fields.sortOrder = input.sort_order;
+  if (input.content_json) {
+    fields.contentJson = input.content_json as string;
+    fields.blocksJson = rerenderLunfardoBlocks(input.content_json as string);
+  }
+
+  updateLunfardoQueueItem(id, fields);
+  const after = getLunfardoQueueItem(id);
+  logAuditEntry(auditAdmin(), 'edit_lunfardo_queue_item', 'lunfardo_queue', id,
+    { word: before.word, date: before.scheduledDate },
+    { word: after?.word, date: after?.scheduledDate },
+    input,
+  );
+  return JSON.stringify({ success: true, id, updated: Object.keys(fields) });
+});
+
+register('reorder_lunfardo_queue_item', (input) => {
+  const { getLunfardoQueueItem, updateLunfardoQueueItem } = require('./contentQueue');
+  const id = input.id as number;
+  const before = getLunfardoQueueItem(id);
+  if (!before) return JSON.stringify({ error: 'Lunfardo queue item not found' });
+
+  const newDate = input.new_date as string;
+  const newSortOrder = (input.new_sort_order as number) ?? 0;
+  updateLunfardoQueueItem(id, { scheduledDate: newDate, sortOrder: newSortOrder });
+
+  logAuditEntry(auditAdmin(), 'reorder_lunfardo_queue_item', 'lunfardo_queue', id,
+    { date: before.scheduledDate, sortOrder: before.sortOrder },
+    { date: newDate, sortOrder: newSortOrder },
+    input,
+  );
+  return JSON.stringify({ success: true, id, newDate, newSortOrder });
+});
+
+register('remove_lunfardo_queue_item', (input) => {
+  const { getLunfardoQueueItem, archiveLunfardoQueueItem, deleteLunfardoQueueItem } = require('./contentQueue');
+  const id = input.id as number;
+  const item = getLunfardoQueueItem(id);
+  if (!item) return JSON.stringify({ error: 'Lunfardo queue item not found' });
+
+  const permanent = (input.permanent as boolean) ?? false;
+  if (permanent) {
+    deleteLunfardoQueueItem(id);
+  } else {
+    archiveLunfardoQueueItem(id);
+  }
+
+  logAuditEntry(auditAdmin(), 'remove_lunfardo_queue_item', 'lunfardo_queue', id,
+    { word: item.word, date: item.scheduledDate, status: item.status },
+    { status: permanent ? 'deleted' : 'archived' },
+    input,
+  );
+  return JSON.stringify({ success: true, id, action: permanent ? 'deleted' : 'archived' });
+});
+
+register('add_lunfardo_queue_item', (input) => {
+  const { insertLunfardoQueueItem } = require('./contentQueue');
+  const { formatLunfardoBlocks } = require('./lessonEngine');
+  const scheduledDate = input.scheduled_date as string;
+  const contentJson = input.content_json as string;
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(contentJson);
+  } catch {
+    return JSON.stringify({ error: 'Invalid content_json — must be valid JSON' });
+  }
+
+  const blocks = formatLunfardoBlocks(parsed);
+  const id = insertLunfardoQueueItem({
+    scheduledDate,
+    word: parsed.word ?? 'Unknown',
+    contentJson,
+    blocksJson: JSON.stringify(blocks),
+  });
+
+  logAuditEntry(auditAdmin(), 'add_lunfardo_queue_item', 'lunfardo_queue', id,
+    null, { scheduledDate, word: parsed.word }, input,
+  );
+  return JSON.stringify({ success: true, id, word: parsed.word, scheduledDate });
+});
+
+register('regenerate_lunfardo_queue_item', async (input) => {
+  const { regenerateLunfardoQueueItem } = require('./contentQueue');
+  const id = input.id as number;
+  const item = await regenerateLunfardoQueueItem(id);
+  if (!item) return JSON.stringify({ error: 'Lunfardo queue item not found' });
+  return JSON.stringify({ success: true, id, word: item.word });
+});
+
+// ── Fill content queue (both types) ─────────────────────────
 
 register('fill_content_queue', (input) => {
   const { isQueueGenerationRunning, generateLessonQueue, generateLunfardoQueue } = require('./contentQueue');
