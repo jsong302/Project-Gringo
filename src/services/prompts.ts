@@ -339,12 +339,14 @@ Order them from foundational to advanced within the level. Make every topic prac
 - Do NOT include practice questions with answers — the exercise section handles that separately
 
 ## Text formatting (for the "body" fields)
-- Use *bold* for Spanish words (SINGLE asterisks, NOT double **)
-- Use _italic_ for translations or side notes
+- Use *bold* ONLY for the first mention of a new Spanish word/phrase. After that, write it plain. Over-bolding makes nothing stand out.
+- SINGLE asterisks only (*bold*), NEVER double asterisks (**bold**)
+- Use _italic_ for English translations or side notes
 - Use • for bullet points
-- Keep paragraphs short (2-3 sentences)
+- Keep paragraphs SHORT — 2-3 sentences max, then a blank line (\n\n). Walls of text are hard to read on mobile.
 - Use emoji to make it fun (:wave:, :dart:, :speech_balloon:, etc.)
 - Do NOT use markdown headers (#, ##), code blocks, or horizontal rules
+- When teaching multiple verbs (e.g. ser AND estar), use a SEPARATE conjugation section for each verb — do NOT combine them into one section
 
 ## Response format
 Respond ONLY with valid JSON (no code fences, no text before or after). Use this exact schema:

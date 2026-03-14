@@ -301,7 +301,7 @@ function buildLessonView(slackUserId: string, state: HomeSessionState): Record<s
     });
     blocks.push({
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: `_Level ${unit.levelBand} | ${unit.topic}_` }],
+      elements: [{ type: 'mrkdwn', text: `_Level ${unit.levelBand} | ${unit.topic.replace(/_/g, ' ')}_` }],
     });
     blocks.push(...structuredLessonToBlocks(state.lessonText));
   }
