@@ -1034,13 +1034,16 @@ register('bypass_exit_exam', (input) => {
      VALUES (${userId}, ${level}, '[]', 0, 0, 1)`,
   );
 
-  // Advance to next level
-  updateLevel(userId, level + 1);
+  // Advance to next level and unlock all its units
+  const newLevel = level + 1;
+  updateLevel(userId, newLevel);
+  const { unlockLevel } = require('./curriculumDelivery');
+  const unlocked = unlockLevel(userId, newLevel);
 
-  logAuditEntry(auditAdmin(), 'bypass_exit_exam', 'user', userId, { level: user.level }, { level: level + 1 }, input);
+  logAuditEntry(auditAdmin(), 'bypass_exit_exam', 'user', userId, { level: user.level }, { level: newLevel }, input);
   return JSON.stringify({
     success: true,
-    message: `Bypassed level ${level} exit exam for user ${user.displayName ?? userId}. Advanced to level ${level + 1}.`,
+    message: `Bypassed level ${level} exit exam for user ${user.displayName ?? userId}. Advanced to level ${newLevel}, ${unlocked} units unlocked.`,
   });
 });
 

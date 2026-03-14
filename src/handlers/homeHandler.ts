@@ -1830,12 +1830,13 @@ async function finalizeExam(userId: number, slackUserId: string, client: any): P
   state.exitExamLevel = examState.levelBand;
 
   if (examState.passed) {
-    // Advance the user to the next level
+    // Advance the user to the next level and unlock all its units
     const { updateLevel } = require('../services/userService');
-    const { activateNextUnit } = require('../services/curriculumDelivery');
-    updateLevel(userId, examState.levelBand + 1);
-    activateNextUnit(userId);
-    homeLog.info(`User ${slackUserId} passed level ${examState.levelBand} exit exam — advancing to level ${examState.levelBand + 1}`);
+    const { unlockLevel } = require('../services/curriculumDelivery');
+    const newLevel = examState.levelBand + 1;
+    updateLevel(userId, newLevel);
+    unlockLevel(userId, newLevel);
+    homeLog.info(`User ${slackUserId} passed level ${examState.levelBand} exit exam — advanced to level ${newLevel}, all units unlocked`);
   }
 
   state.view = 'exit_exam_result';

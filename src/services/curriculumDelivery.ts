@@ -269,12 +269,20 @@ export function initializeUserProgress(userId: number, startUnitOrder: number): 
   const db = getDb();
   const curriculum = getCurriculum();
 
+  // Find the level band of the starting unit
+  const startUnit = curriculum.find((u) => u.unitOrder === startUnitOrder);
+  const startLevel = startUnit?.levelBand ?? 1;
+
   for (const unit of curriculum) {
-    const status = unit.unitOrder < startUnitOrder
-      ? 'skipped'
-      : unit.unitOrder === startUnitOrder
-        ? 'active'
-        : 'locked';
+    let status: string;
+    if (unit.unitOrder < startUnitOrder) {
+      status = 'skipped';
+    } else if (unit.levelBand === startLevel) {
+      // All units in the starting level are unlocked
+      status = 'active';
+    } else {
+      status = 'locked';
+    }
 
     const startedAt = status === 'active' ? `datetime('now')` : 'NULL';
 
@@ -289,12 +297,41 @@ export function initializeUserProgress(userId: number, startUnitOrder: number): 
   }
 
   // Update user's level based on the starting unit's level_band
-  const startUnit = curriculum.find((u) => u.unitOrder === startUnitOrder);
   if (startUnit) {
     updateLevel(userId, startUnit.levelBand);
   }
 
-  delLog.info(`Initialized curriculum for user ${userId} at unit ${startUnitOrder}`);
+  delLog.info(`Initialized curriculum for user ${userId} at unit ${startUnitOrder} (all level ${startLevel} units unlocked)`);
+}
+
+/**
+ * Unlock all locked units in a given level band for a user.
+ * Used when advancing to a new level (after passing exit exam).
+ */
+export function unlockLevel(userId: number, levelBand: number): number {
+  const db = getDb();
+  const result = db.exec(
+    `SELECT ucp.unit_id FROM user_curriculum_progress ucp
+     JOIN curriculum_units cu ON ucp.unit_id = cu.id
+     WHERE ucp.user_id = ${userId} AND ucp.status = 'locked'
+       AND cu.level_band = ${levelBand} AND cu.status = 'active'`,
+  );
+
+  if (!result.length) return 0;
+
+  let unlocked = 0;
+  for (const row of result[0].values) {
+    const unitId = row[0] as number;
+    db.run(
+      `UPDATE user_curriculum_progress
+       SET status = 'active', started_at = datetime('now'), updated_at = datetime('now')
+       WHERE user_id = ${userId} AND unit_id = ${unitId}`,
+    );
+    unlocked++;
+  }
+
+  delLog.info(`Unlocked ${unlocked} units in level ${levelBand} for user ${userId}`);
+  return unlocked;
 }
 
 /**
