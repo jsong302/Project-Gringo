@@ -354,6 +354,11 @@ export const ADMIN_TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: 'regenerate_all_lessons',
+    description: 'Regenerate ALL lessons in the bank from scratch. Use this after updating prompts or curriculum changes. Runs in background.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
     name: 'view_lesson_bank',
     description: 'View which units have generated lessons in the bank and which are missing.',
     input_schema: { type: 'object', properties: {}, required: [] },
@@ -908,6 +913,25 @@ register('generate_lesson_bank', () => {
   return JSON.stringify({
     success: true,
     message: 'Lesson bank generation started in the background. Use view_lesson_bank to check status.',
+  });
+});
+
+register('regenerate_all_lessons', () => {
+  const { isBankGenerationRunning, generateAllBankLessons } = require('./curriculumDelivery');
+  if (isBankGenerationRunning()) {
+    return JSON.stringify({
+      success: false,
+      message: 'Lesson bank generation is already running. Use view_lesson_bank to check progress.',
+    });
+  }
+  generateAllBankLessons(true).then((result: any) => {
+    toolLog.info(`Lesson bank regeneration complete: ${JSON.stringify(result)}`);
+  }).catch((err: any) => {
+    toolLog.error(`Lesson bank regeneration failed: ${err}`);
+  });
+  return JSON.stringify({
+    success: true,
+    message: 'Regenerating ALL lessons in the background. This will take a while. Use view_lesson_bank to check progress.',
   });
 });
 

@@ -105,6 +105,7 @@ export async function handleAdmin(
       '*Lesson Bank*',
       '- `generate lesson bank` — generate all missing lessons (background)',
       '- `regenerate lesson for unit <N>` — regenerate a specific lesson',
+      '- `regenerate all lessons` — regenerate ALL lessons from scratch (background)',
       '- `view lesson bank` — check which units have lessons',
       '',
       '*Settings & System*',

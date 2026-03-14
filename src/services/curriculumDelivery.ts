@@ -437,9 +437,10 @@ export function isBankGenerationRunning(): boolean {
 
 /**
  * Generate lessons for all units that don't have one in the bank yet.
+ * When force=true, regenerates ALL lessons (even existing ones).
  * Returns count of newly generated lessons. Only one run at a time.
  */
-export async function generateAllBankLessons(): Promise<{ generated: number; skipped: number; errors: number }> {
+export async function generateAllBankLessons(force = false): Promise<{ generated: number; skipped: number; errors: number }> {
   if (bankGenerationRunning) {
     return { generated: 0, skipped: 0, errors: 0 };
   }
@@ -452,15 +453,17 @@ export async function generateAllBankLessons(): Promise<{ generated: number; ski
     let errors = 0;
 
     for (const unit of units) {
-      const existing = getLessonFromBank(unit.id);
-      if (existing) {
-        skipped++;
-        continue;
+      if (!force) {
+        const existing = getLessonFromBank(unit.id);
+        if (existing) {
+          skipped++;
+          continue;
+        }
       }
       try {
         await generateAndBankLesson(unit.id);
         generated++;
-        delLog.info(`Generated bank lesson for Unit ${unit.unitOrder}: ${unit.title}`);
+        delLog.info(`${force ? 'Regenerated' : 'Generated'} bank lesson for Unit ${unit.unitOrder}: ${unit.title}`);
       } catch (err) {
         errors++;
         delLog.error(`Failed to generate bank lesson for Unit ${unit.unitOrder}: ${err}`);
