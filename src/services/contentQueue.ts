@@ -446,7 +446,16 @@ function getExistingDates(table: string): Set<string> {
 function getQueuedLessonTopics(): string[] {
   const db = getDb();
   const result = db.exec(
-    `SELECT title FROM lesson_queue WHERE status IN ('ready', 'sent') ORDER BY scheduled_date DESC LIMIT 20`,
+    `SELECT title FROM lesson_queue ORDER BY scheduled_date DESC LIMIT 30`,
+  );
+  if (!result.length) return [];
+  return result[0].values.map(row => row[0] as string).filter(Boolean);
+}
+
+function getQueuedLunfardoWords(): string[] {
+  const db = getDb();
+  const result = db.exec(
+    `SELECT word FROM lunfardo_queue ORDER BY scheduled_date DESC LIMIT 30`,
   );
   if (!result.length) return [];
   return result[0].values.map(row => row[0] as string).filter(Boolean);
@@ -531,13 +540,17 @@ export async function generateLunfardoQueue(days: number = 14): Promise<{
 
     queueLog.info(`Generating lunfardo for ${dates.length} dates: ${dates.join(', ')}`);
 
+    const queuedWords = getQueuedLunfardoWords();
+    const avoidWords = [...new Set(queuedWords)];
+
     let generated = 0;
     let errors = 0;
     const errorDetails: string[] = [];
 
     for (const date of dates) {
       try {
-        const { post, blocks } = await generateLunfardoPost();
+        const { post, blocks } = await generateLunfardoPost(avoidWords);
+        avoidWords.push(post.word);
         insertLunfardoQueueItem({
           scheduledDate: date,
           word: post.word,

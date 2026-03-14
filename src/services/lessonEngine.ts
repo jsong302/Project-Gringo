@@ -215,15 +215,32 @@ export async function generateDailyLesson(level: number, additionalRecentTopics?
   return { lesson, blocks };
 }
 
-export async function generateLunfardoPost(): Promise<{
+export function getRecentLunfardoWords(limit = 14): string[] {
+  const db = getDb();
+  const result = db.exec(
+    `SELECT topic FROM lesson_log WHERE lesson_type = 'lunfardo' ORDER BY posted_at DESC LIMIT ${limit}`,
+  );
+  if (!result.length) return [];
+  return result[0].values.map((row) => row[0] as string);
+}
+
+export async function generateLunfardoPost(avoidWords?: string[]): Promise<{
   post: LunfardoPost;
   blocks: any[];
 }> {
   const promptTemplate = getPromptOrThrow('lunfardo_del_dia');
 
+  const recentWords = getRecentLunfardoWords();
+  const allAvoid = avoidWords
+    ? [...new Set([...recentWords, ...avoidWords])]
+    : recentWords;
+  const avoidClause = allAvoid.length > 0
+    ? `\n\nDo NOT use any of these words (already covered recently): ${allAvoid.join(', ')}`
+    : '';
+
   const response = await callLlm({
     system: 'Respond only with valid JSON. No additional text.',
-    messages: [{ role: 'user', content: promptTemplate }],
+    messages: [{ role: 'user', content: promptTemplate + avoidClause }],
     temperature: 0.9,
   });
 
