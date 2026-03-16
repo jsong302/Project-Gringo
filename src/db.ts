@@ -9,6 +9,8 @@ const dbLog = log.withScope('db');
 
 let dbSingleton: Database | null = null;
 let dbPath: string = '';
+let autoSaveInterval: ReturnType<typeof setInterval> | null = null;
+const AUTO_SAVE_MS = 30_000; // flush to disk every 30 seconds
 
 export async function initDb(config: DbConfig): Promise<Database> {
   if (dbSingleton) {
@@ -76,6 +78,12 @@ export async function initDb(config: DbConfig): Promise<Database> {
     // Save to disk after schema application
     saveDb();
 
+    // Start periodic auto-save to prevent data loss on restart
+    if (autoSaveInterval) clearInterval(autoSaveInterval);
+    autoSaveInterval = setInterval(() => {
+      saveDb();
+    }, AUTO_SAVE_MS);
+
     return db;
   } catch (err) {
     throw new GringoError({
@@ -109,6 +117,10 @@ export function saveDb(): void {
 }
 
 export function closeDb(): void {
+  if (autoSaveInterval) {
+    clearInterval(autoSaveInterval);
+    autoSaveInterval = null;
+  }
   if (dbSingleton) {
     saveDb();
     dbSingleton.close();
